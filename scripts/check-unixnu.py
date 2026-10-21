@@ -11,7 +11,7 @@ import threading
 import zipfile
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
-from unixnu import cli, feeds, ipsw, payload
+from unixnu import cli, feeds, ipsw, payload, tree
 from unixnu.config import Context, parse_config
 from unixnu.util import Error
 
@@ -89,6 +89,15 @@ def main():
             expect(False, 'missing --local directory accepted')
         except Error:
             pass
+    with tempfile.TemporaryDirectory() as name:
+        root = Path(name)
+        target = root / "source/module"
+        target.mkdir(parents=True)
+        link = root / "out/tree/kits/module"
+        tree._link(target, link)
+        relative = link.readlink()
+        expect(not relative.is_absolute(), "tree link is absolute and not portable across mounts")
+        expect(link.resolve() == target.resolve(), "relative tree link does not resolve")
     expect(payload.check_args(['-v', 'a=1', 'b=x,y']) == '-v a=1 b=x,y', 'kernel arguments')
     for bad in (['a b'], ['x' * 1100], ['a;b']):
         try:

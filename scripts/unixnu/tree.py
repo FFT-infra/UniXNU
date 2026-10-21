@@ -5,6 +5,7 @@ plus refer/, build/ and .cache/ for the scripts that expect them. Modules are sy
 their sources, so edits to a local module take effect on the next build; scripts are copied, since
 they locate the tree from their own real path. The device package appears as kits/<kit>.
 """
+import os
 import shutil
 from pathlib import Path
 
@@ -22,7 +23,7 @@ def _link(target, link):
     link.parent.mkdir(parents=True, exist_ok=True)
     if link.is_symlink() or link.exists():
         link.unlink()
-    link.symlink_to(Path(target).resolve())
+    link.symlink_to(os.path.relpath(Path(target).resolve(), link.parent))
 
 
 def _copy_scripts(source, destination):
@@ -53,7 +54,7 @@ def assemble(ctx, modules):
     if link.is_symlink():
         link.unlink()
     if not link.exists():
-        link.symlink_to(firmware)
+        _link(firmware, link)
     kit = ctx.board.get('board', {}).get('kit', ctx.name)
     for (kind, name), module in sorted(modules.items()):
         if module.path is None:
