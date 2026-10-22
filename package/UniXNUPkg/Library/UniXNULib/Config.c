@@ -26,6 +26,38 @@
 #define UNIXNU_KIT_MANIFEST  L"Kit.toml"
 
 //
+// Keep in sync with ShengBootMemoryDxe's RAM_BLOCK_DEVICE_PATH.
+//
+STATIC CONST EFI_GUID  mRamDiskDevicePathGuid = {
+  0xA9C6827C, 0x1BD8, 0x410C, { 0x88, 0x5A, 0xC4, 0x65, 0x00, 0xF7, 0xD8, 0x36 }
+};
+
+//
+// Keep in sync with ShengBootMemoryDxe's configuration table.
+//
+STATIC EFI_GUID  mShengBootStatusGuid = {
+  0x8E8F1B43, 0x70A4, 0x4F8D, { 0x9B, 0x63, 0x24, 0x1E, 0xC6, 0x91, 0x52, 0xA7 }
+};
+
+#define SHENG_BOOT_MEMORY_STATUS_SIGNATURE  SIGNATURE_64 ('S', 'H', 'M', 'E', 'M', 'S', 'T', '1')
+
+typedef struct {
+  UINT64      Signature;
+  UINT32      Version;
+  UINT32      HobFound;
+  UINT64      Dtb;
+  EFI_STATUS  FdtStatus;
+  EFI_STATUS  InitrdStatus;
+  EFI_STATUS  MapStatus;
+  EFI_STATUS  BlockStatus;
+  UINT64      InitrdStart;
+  UINT64      InitrdEnd;
+  UINT64      MapBase;
+  UINT64      MapEnd;
+  UINT32      MapPieces;
+} SHENG_BOOT_MEMORY_STATUS;
+
+//
 // Used when no configuration file is found. Parsed with the same code path
 // as a file; removable-media loaders found on other volumes are added in
 // front of the action entries. With no loader, the default is "Return to
@@ -1501,6 +1533,7 @@ TryVolume (
 
   Status = UniXNUReadFile (Volume, (CONST CHAR16 *)PcdGetPtr (PcdUniXNUConfigPath), (VOID **)&Text, &Size);
   if (EFI_ERROR (Status)) {
+    UniXNULog ("config: volume %p has no %s: %r", Volume, (CONST CHAR16 *)PcdGetPtr (PcdUniXNUConfigPath), Status);
     return FALSE;
   }
 
@@ -1518,6 +1551,62 @@ TryVolume (
   return TRUE;
 }
 
+STATIC
+BOOLEAN
+IsRamDiskHandle (
+  IN EFI_HANDLE  Handle
+  )
+{
+  EFI_DEVICE_PATH_PROTOCOL  *Path;
+  EFI_DEVICE_PATH_PROTOCOL  *Node;
+
+  if (EFI_ERROR (gBS->HandleProtocol (Handle, &gEfiDevicePathProtocolGuid, (VOID **)&Path))) {
+    return FALSE;
+  }
+
+  for (Node = Path; !IsDevicePathEnd (Node); Node = NextDevicePathNode (Node)) {
+    if ((DevicePathType (Node) == HARDWARE_DEVICE_PATH) &&
+        (DevicePathSubType (Node) == HW_VENDOR_DP) &&
+        CompareGuid (&((VENDOR_DEVICE_PATH *)Node)->Guid, &mRamDiskDevicePathGuid))
+    {
+      return TRUE;
+    }
+  }
+
+  return FALSE;
+}
+
+STATIC
+VOID
+GetShengStatus (
+  OUT CHAR8          *Status,
+  IN  UINTN          Size
+  )
+{
+  SHENG_BOOT_MEMORY_STATUS  *Table;
+
+  Status[0] = '\0';
+  if (EFI_ERROR (EfiGetSystemConfigurationTable (&mShengBootStatusGuid, (VOID **)&Table)) ||
+      (Table == NULL) ||
+      (Table->Signature != SHENG_BOOT_MEMORY_STATUS_SIGNATURE) ||
+      (Table->Version != 1))
+  {
+    return;
+  }
+
+  AsciiSPrint (
+    Status,
+    Size,
+    "i=%r m=%r b=%r %lx-%lx p=%u",
+    Table->InitrdStatus,
+    Table->MapStatus,
+    Table->BlockStatus,
+    Table->MapBase,
+    Table->MapEnd,
+    Table->MapPieces
+    );
+}
+
 VOID
 UniXNUConfigLoad (
   IN  EFI_HANDLE  ImageHandle,
@@ -1530,12 +1619,28 @@ UniXNUConfigLoad (
   UINTN                      Count;
   UINTN                      Index;
   BOOLEAN                    Loaded;
+  BOOLEAN                    VolumeScan;
+  UINTN                      VolumeCount;
+  EFI_STATUS                 VolumeStatus;
+  UINTN                      BlockCount;
+  UINTN                      RamDiskBlocks;
+  UINTN                      RamDiskVolumes;
+  UINTN                      RamDiskReadIndex;
   TOML_NODE                  *Root;
   CHAR8                      Error[96];
+  CHAR8                      ShengStatus[96];
   CHAR16                     Label[64];
 
   ZeroMem (Config, sizeof (*Config));
-  Loaded = FALSE;
+  Loaded       = FALSE;
+  VolumeScan   = FALSE;
+  VolumeCount  = 0;
+  VolumeStatus = EFI_NOT_FOUND;
+  BlockCount    = 0;
+  RamDiskBlocks = 0;
+  RamDiskVolumes = 0;
+  RamDiskReadIndex = 0;
+  GetShengStatus (ShengStatus, sizeof (ShengStatus));
 
   //
   // The volume UniXNU was started from wins; then every other volume.
@@ -1547,8 +1652,33 @@ UniXNUConfigLoad (
   if (!Loaded && (Config->Error[0] == '\0')) {
     Status = gBS->LocateHandleBuffer (ByProtocol, &gEfiSimpleFileSystemProtocolGuid, NULL, &Count, &Handles);
     if (!EFI_ERROR (Status)) {
+      VolumeScan  = TRUE;
+      VolumeCount = Count;
+      UniXNULog ("config: scanning %u SimpleFileSystem volume(s)", (UINT32)Count);
       for (Index = 0; Index < Count && !Loaded && Config->Error[0] == '\0'; Index++) {
+        if (IsRamDiskHandle (Handles[Index])) {
+          RamDiskReadIndex = Index;
+          RamDiskVolumes++;
+        }
+
         Loaded = TryVolume (Config, Handles[Index]);
+      }
+
+      FreePool (Handles);
+    } else {
+      VolumeStatus = Status;
+      UniXNULog ("config: no SimpleFileSystem handles: %r", Status);
+    }
+  }
+
+  if (VolumeScan) {
+    Status = gBS->LocateHandleBuffer (ByProtocol, &gEfiBlockIoProtocolGuid, NULL, &Count, &Handles);
+    if (!EFI_ERROR (Status)) {
+      BlockCount = Count;
+      for (Index = 0; Index < Count; Index++) {
+        if (IsRamDiskHandle (Handles[Index])) {
+          RamDiskBlocks++;
+        }
       }
 
       FreePool (Handles);
@@ -1575,12 +1705,46 @@ UniXNUConfigLoad (
       TomlFree (Root);
     }
 
+    if (Config->Error[0] == '\0') {
+      if (!VolumeScan) {
+        AsciiSPrint (Config->Notice, sizeof (Config->Notice), "filesystem scan failed: %r", VolumeStatus);
+      } else if (RamDiskBlocks == 0) {
+        AsciiSPrint (
+          Config->Notice,
+          sizeof (Config->Notice),
+          "ramdisk missing; %a",
+          (ShengStatus[0] != '\0') ? ShengStatus : "no status"
+          );
+      } else if (RamDiskVolumes == 0) {
+        AsciiSPrint (
+          Config->Notice,
+          sizeof (Config->Notice),
+          "ramdisk block, FAT not mounted (blk %u fs %u)",
+          (UINT32)BlockCount,
+          (UINT32)VolumeCount
+          );
+      } else if (VolumeCount == 0) {
+        AsciiStrCpyS (Config->Notice, sizeof (Config->Notice), "no filesystem volume (ramdisk not mounted)");
+      } else {
+        AsciiSPrint (
+          Config->Notice,
+          sizeof (Config->Notice),
+          "ramdisk FAT mounted (fs %u/%u), no config",
+          (UINT32)RamDiskReadIndex + 1,
+          (UINT32)BlockCount
+          );
+      }
+    }
+
     if (AddFallbackLoaders (Config, ImageHandle) == 0) {
       //
       // Only the actions are left. Say so instead of showing a menu that
       // looks complete.
       //
-      AsciiStrCpyS (Config->Notice, sizeof (Config->Notice), "no boot entry found");
+      if (Config->Notice[0] == '\0') {
+        AsciiStrCpyS (Config->Notice, sizeof (Config->Notice), "no boot entry found");
+      }
+
       UniXNULog ("config: no boot entry found");
     }
 
