@@ -154,6 +154,7 @@ def main() -> int:
     if vars_template:
         vars_copy = work / "vars.fd"
         shutil.copy(vars_template, vars_copy)
+        vars_copy.chmod(0o600)
         cmd += ["-drive", f"if=pflash,format=raw,file={vars_copy}"]
     cmd += [
         "-drive", f"if=none,id=esp,format=raw,readonly=on,file=fat:{args.esp.resolve()}",

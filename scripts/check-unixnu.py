@@ -98,6 +98,9 @@ def main():
         relative = link.readlink()
         expect(not relative.is_absolute(), "tree link is absolute and not portable across mounts")
         expect(link.resolve() == target.resolve(), "relative tree link does not resolve")
+    lzfse = ipsw.lzfse_command('/tmp/in.lzfse', '/tmp/out.macho')
+    expect('-decode' in lzfse and '/tmp/in.lzfse' in lzfse and '/tmp/out.macho' in lzfse,
+           "LZFSE decoder command does not preserve decode input/output")
     expect(payload.check_args(['-v', 'a=1', 'b=x,y']) == '-v a=1 b=x,y', 'kernel arguments')
     for bad in (['a b'], ['x' * 1100], ['a;b']):
         try:

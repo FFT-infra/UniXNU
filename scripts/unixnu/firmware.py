@@ -30,7 +30,8 @@ def build(ctx, modules, uefi, edk2, target='DEBUG'):
         log('firmware: initializing submodules of the Mu-Silicium checkout')
         run(['git', '-C', uefi, 'submodule', 'update', '--init', '--depth', '1', '--', *fw['submodules']])
     for script in [] if ctx.args.skip_preflight else fw.get('preflight', []):
-        run(['python3', ctx.tree / script], cwd=ctx.tree, log_file=ctx.logs / 'firmware-preflight.log')
+        run(['python3', ctx.tree / script], cwd=ctx.tree, env=dict(os.environ, UNIXNU_UEFI=str(uefi)),
+            log_file=ctx.logs / 'firmware-preflight.log')
     defines = {'FD_BASE': hex(base), 'FD_SIZE': hex(size), 'FD_BLOCKS': str(size // 0x1000)}
     defines.update({key: str(value) for key, value in fw.get('defines', {}).items()})
     fields = {'uefi': str(uefi), 'edk2': str(edk2), 'tree': str(ctx.tree)}
@@ -47,7 +48,8 @@ def build(ctx, modules, uefi, edk2, target='DEBUG'):
     env = dict(os.environ, WORKSPACE=str(uefi), EDK_TOOLS_PATH=str(tools), CONF_PATH=str(conf), PACKAGES_PATH=packages,
                PYTHON_COMMAND='python3',
                PATH=os.pathsep.join([str(tools / 'BinWrappers/PosixLike'), str(tools / 'Source/C/bin'), os.environ['PATH']]))
-    env.setdefault('CLANG_BIN', clang_bin(ctx.work / 'toolchain'))
+    if 'CLANG_BIN' not in env:
+        env['CLANG_BIN'] = clang_bin(ctx.work / 'toolchain')
     # EDK II embeds the build time; pin it to the commit time so the same sources give the same firmware.
     env.setdefault('SOURCE_DATE_EPOCH', git(uefi, 'log', '-1', '--format=%ct').strip())
     applied = []

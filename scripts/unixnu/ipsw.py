@@ -11,6 +11,7 @@ import hashlib
 import io
 import json
 import plistlib
+import shutil
 import struct
 import subprocess
 import time
@@ -19,7 +20,7 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
-from .util import Error, expand, log, sha256_file, tool
+from .util import Error, expand, log, sha256_file
 
 CHUNK = 8 << 20
 
@@ -195,6 +196,21 @@ def im4p_payload(data):
     return items[3]
 
 
+def lzfse_command(packed, raw):
+    """A decoder command for an LZFSE stream, including the Nix fallback used on Linux builders."""
+    packed, raw = str(packed), str(raw)
+    macos = Path('/usr/bin/compression_tool')
+    if macos.is_file():
+        return [str(macos), '-decode', '-a', 'lzfse', '-i', packed, '-o', raw]
+    decoder = shutil.which('lzfse')
+    if decoder:
+        return [decoder, '-decode', '-i', packed, '-o', raw]
+    nix = shutil.which('nix')
+    if nix:
+        return [nix, 'shell', 'nixpkgs#lzfse', '-c', 'lzfse', '-decode', '-i', packed, '-o', raw]
+    raise Error('no LZFSE decoder: install lzfse, or use macOS /usr/bin/compression_tool')
+
+
 def kernelcache(ctx, source):
     """The decompressed arm64 kernelcache Mach-O of the IPSW, in out/ipsw (checked against the board pin)."""
     spec = ctx.board.get('kernel', {}).get('prelink', {})
@@ -202,14 +218,14 @@ def kernelcache(ctx, source):
     pin = spec.get('kernelcache_sha256')
     if out.is_file() and (pin is None or sha256_file(out) == pin):
         return out
-    tool('compression_tool', 'macOS /usr/bin/compression_tool decodes the LZFSE kernelcache')
     source.cache.mkdir(parents=True, exist_ok=True)
     payload = im4p_payload(source.read('KernelCache'))
     packed, raw = source.cache / 'kernelcache.lzfse', source.cache / 'kernelcache.fat'
     packed.write_bytes(payload)
-    result = subprocess.run(['/usr/bin/compression_tool', '-decode', '-a', 'lzfse', '-i', packed, '-o', raw], capture_output=True, text=True)
+    command = lzfse_command(packed, raw)
+    result = subprocess.run(command, capture_output=True, text=True)
     if result.returncode:
-        raise Error(f'compression_tool failed: {result.stderr.strip()}')
+        raise Error(f'LZFSE decode failed: {result.stderr.strip() or result.stdout.strip()}')
     fat = raw.read_bytes()
     if fat[:4] == b'\xca\xfe\xba\xbe':
         count = struct.unpack('>I', fat[4:8])[0]

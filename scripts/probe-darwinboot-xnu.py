@@ -12,9 +12,26 @@ import sys
 import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def tool(name):
+    """Use the host SDK tools when available, otherwise the LLVM tools on Linux."""
+    if shutil.which('xcrun'):
+        return ['xcrun', name]
+    fallback = {'nm': 'llvm-nm', 'dwarfdump': 'llvm-dwarfdump'}.get(name)
+    if fallback and shutil.which(fallback):
+        return [fallback]
+    raise SystemExit(f'required tool {name!r} is unavailable; install Xcode or LLVM')
+
+
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--kernel', type=Path, default=ROOT / 'build/xnu/ios-obj/DEVELOPMENT_ARM64_BCM2837/mach.development.bcm2837.unstripped.noctf')
 parser.add_argument('--output', type=Path, default=ROOT / 'build/darwinboot-xnu')
+parser.add_argument('--uefi', type=Path, default=ROOT / 'package/Build/Out/AARCH64-DEBUG/UniXNU.efi',
+                    help='UniXNU UEFI application copied into the fixture')
+parser.add_argument('--darwinboot', type=Path,
+                    default=ROOT / 'build/DarwinBoot/DEBUG_CLANGPDB/AARCH64/DarwinBoot.efi',
+                    help='DarwinBoot UEFI driver copied into the fixture')
 parser.add_argument('--timeout', type=int, choices=range(1, 1801), default=25, help='Bounded guest deadline: up to 300 seconds, or 1800 for explicit live HID control')
 parser.add_argument('--mutate-target-main-page', action='store_true', help='Negative input control: corrupt only the actual launchd LC_MAIN vnode page before genuine validation, preserving original files/signatures')
 parser.add_argument('--follow-target-main', action='store_true', help='Follow actual original dyld startup to the supplied launchd LC_MAIN and its first completed instruction')
@@ -314,8 +331,12 @@ payloads = esp / 'EFI/UniXNU/Payloads'
 payloads.mkdir(parents=True, exist_ok=True)
 (esp / 'EFI/BOOT').mkdir(exist_ok=True)
 subprocess.run(['python3', ROOT / 'scripts/audit-xnu-kernel.py', args.kernel], check=True)
-shutil.copyfile(ROOT / 'unixnu/Build/Out/AARCH64-DEBUG/UniXNU.efi', esp / 'EFI/BOOT/BOOTAA64.EFI')
-shutil.copyfile(ROOT / 'build/DarwinBoot/DEBUG_CLANGPDB/AARCH64/DarwinBoot.efi', payloads / 'DarwinBoot.efi')
+if not args.uefi.is_file():
+    raise SystemExit(f'UniXNU UEFI application not found: {args.uefi}')
+if not args.darwinboot.is_file():
+    raise SystemExit(f'DarwinBoot UEFI driver not found: {args.darwinboot}')
+shutil.copyfile(args.uefi, esp / 'EFI/BOOT/BOOTAA64.EFI')
+shutil.copyfile(args.darwinboot, payloads / 'DarwinBoot.efi')
 shutil.copyfile(args.kernel, payloads / 'kernel.macho')
 trust_sidecar = payloads / 'kernel.macho.trustcache'
 if args.trust_cache:
@@ -525,7 +546,7 @@ if args.zone_pgz_probe_case:
 if args.native_data_user_image:
     user_addresses=json.loads((args.native_data_user_image.parent/'addresses.json').read_text())
     args.native_user=True # Observation only; ESP already retains the original OS and actual Data.
-symbols = subprocess.check_output(['xcrun', 'nm', '-U', args.kernel], text=True)
+symbols = subprocess.check_output(tool('nm') + ['-U', args.kernel], text=True)
 panic = re.search(r'^([0-9a-fA-F]+)\s+\S\s+' + re.escape(args.break_symbol) + '$', symbols, re.M)
 if args.break_address is not None:
     panic = {1: f'{args.break_address:x}'}
@@ -584,7 +605,7 @@ if args.inspect_mac_policies:
         ('mac_policy_list_element','mac_base.o',('mpc',)),
         ('mac_policy_conf','mac_vfs.o',('mpc_name','mpc_fullname','mpc_ops')),
         ('mac_policy_ops','mac_vfs.o',('mpo_proc_check_fork','mpo_vnode_check_exec','mpo_vnode_check_signature','mpo_proc_check_launch_constraints','mpo_file_check_mmap','mpo_policy_syscall'))):
-        text=subprocess.check_output(['xcrun','dwarfdump','--name='+structure,'--show-children',objects/obj],text=True)
+        text=subprocess.check_output(tool('dwarfdump') + ['--name='+structure,'--show-children',objects/obj],text=True)
         dwarf[obj]=hashlib.sha256((objects/obj).read_bytes()).hexdigest();layout[structure]={}
         for name in names:
             match=re.search(r'DW_AT_name\s+\("'+name+r'"\)[\s\S]*?DW_AT_data_member_location\s+\((0x[0-9a-f]+)\)',text)
@@ -1017,7 +1038,7 @@ if args.mutate_own_vnode_page is not None or cache_fault or main_fault:
     gdb_command.extend(['--trace-address', hex(address), '--mutate-mapped-vnode-page',
         f'{address:x}:{page:x}:{offset & 4095:x}:{hashlib.sha256(image_bytes[page:page + 4096]).hexdigest()}'])
     if cache_fault or main_fault:
-        dwarf = subprocess.check_output(['xcrun', 'dwarfdump', '--name=cs_blob', '--show-children',
+        dwarf = subprocess.check_output(tool('dwarfdump') + ['--name=cs_blob', '--show-children',
             ROOT / 'build/xnu/ios-obj/DEVELOPMENT_ARM64_BCM2837/bsd/DEVELOPMENT/ubc_subr.o'], text=True)
         field = re.search(r'DW_AT_name\s+\("csb_cdhash"\)[\s\S]*?DW_AT_data_member_location\s+\((0x[0-9a-f]+)\)', dwarf)
         if main_fault:
@@ -1075,8 +1096,8 @@ if pgz_fix_counter:
 video_layout = None
 if args.inspect_boot_video:
     obj = ROOT / 'build/xnu/ios-obj/DEVELOPMENT_ARM64_BCM2837/pexpert/DEVELOPMENT/pe_init.o'
-    state_dwarf = subprocess.check_output(['xcrun', 'dwarfdump', '--name=PE_state', '--show-children', obj], text=True)
-    video_dwarf = subprocess.check_output(['xcrun', 'dwarfdump', '--name=PE_Video', '--show-children', obj], text=True)
+    state_dwarf = subprocess.check_output(tool('dwarfdump') + ['--name=PE_state', '--show-children', obj], text=True)
+    video_dwarf = subprocess.check_output(tool('dwarfdump') + ['--name=PE_Video', '--show-children', obj], text=True)
     def member_offset(text, name):
         match = re.search(r'DW_TAG_member[\s\S]*?DW_AT_name\s+\("' + re.escape(name) + r'"\)[\s\S]*?DW_AT_data_member_location\s+\((0x[0-9a-f]+)\)', text)
         if not match:

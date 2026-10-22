@@ -4,8 +4,20 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+import shutil
 import struct
 import subprocess
+
+
+def tool(name):
+    """Use the host SDK tools when available, otherwise the LLVM tools on Linux."""
+    if shutil.which('xcrun'):
+        return ['xcrun', name]
+    fallback = {'nm': 'llvm-nm'}.get(name)
+    if fallback and shutil.which(fallback):
+        return [fallback]
+    raise SystemExit(f'required tool {name!r} is unavailable; install Xcode or LLVM')
+
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('kernel', type=Path)
@@ -13,7 +25,7 @@ args = parser.parse_args()
 data = args.kernel.read_bytes()
 magic, cpu, subtype, kind, count, size = struct.unpack_from('<6I', data)
 assert (magic, cpu, subtype, kind) == (0xfeedfacf, 0x100000c, 0, 2)
-symbols = subprocess.check_output(['xcrun', 'nm', '-g', str(args.kernel)], text=True)
+symbols = subprocess.check_output(tool('nm') + ['-g', str(args.kernel)], text=True)
 address = int(next(line.split()[0] for line in symbols.splitlines()
                    if line.split()[-1:] == ['_sysreg_restore']), 16)
 offset = 32
