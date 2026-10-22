@@ -22,7 +22,7 @@ def _clear_links(directory):
 def _link(target, link):
     link.parent.mkdir(parents=True, exist_ok=True)
     if link.is_symlink() or link.exists():
-        link.unlink()
+        link.unlink(missing_ok=True)
     link.symlink_to(os.path.relpath(Path(target).resolve(), link.parent))
 
 
