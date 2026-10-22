@@ -16,7 +16,14 @@ from pathlib import Path
 from .config import load_toml
 from .util import Error, log, run, sha256_file, tool
 
-DEFAULTS = {'header_version': 0, 'base': 0, 'kernel_offset': 0x8000, 'tags_offset': 0x1e00000, 'pagesize': 4096}
+DEFAULTS = {
+    'header_version': 0,
+    'base': 0,
+    'kernel_offset': 0x8000,
+    'ramdisk_offset': 0x01000000,
+    'tags_offset': 0x1e00000,
+    'pagesize': 4096,
+}
 MKBOOTIMG_FLAGS = ('base', 'kernel_offset', 'tags_offset', 'pagesize', 'header_version', 'ramdisk_offset', 'second_offset', 'cmdline')
 
 
@@ -39,9 +46,9 @@ def compile_shim(uefi, base, size, requires_header, scratch):
     return shim
 
 
-def patch_dtb(dtb, nodes, scratch):
-    """Add device-tree nodes the stock bootloader expects (board.toml [[bootimg.dtb_node]])."""
-    if not nodes:
+def patch_dtb(dtb, nodes, ramdisk, scratch):
+    """Apply boot-image-specific values to the appended device tree."""
+    if not nodes and ramdisk is None:
         return dtb
     fdtput, fdtget = tool('fdtput', 'brew install dtc'), tool('fdtget', 'brew install dtc')
     work = scratch / 'device.dtb'
@@ -55,6 +62,21 @@ def patch_dtb(dtb, nodes, scratch):
             kind = prop.get('type', 's')
             if kind in ('x', 'i', 'u') and [int(v, 16 if kind == 'x' else 10) for v in got] != [int(str(v), 0) for v in values]:
                 raise Error(f'dtb node {node["path"]} property {prop["name"]} did not round-trip')
+    if ramdisk is None:
+        for name in ('linux,initrd-start', 'linux,initrd-end'):
+            try:
+                run([fdtput, '-d', work, '/chosen', name], capture=True)
+            except Error as error:
+                if 'FDT_ERR_NOTFOUND' not in str(error):
+                    raise
+    else:
+        start, end = ramdisk
+        for name, value in (('linux,initrd-start', start), ('linux,initrd-end', end)):
+            cells = [hex(value >> 32), hex(value & 0xffffffff)]
+            run([fdtput, '-t', 'x', work, '/chosen', name, *cells], capture=True)
+            got = run([fdtget, '-t', 'x', work, '/chosen', name], capture=True).split()
+            if [int(v, 16) for v in got] != [int(v, 0) for v in cells]:
+                raise Error(f'dtb node /chosen property {name} did not round-trip')
     return work.read_bytes()
 
 
@@ -87,13 +109,6 @@ def build(ctx, uefi, fd, dtb, ramdisk=None, output=None):
     with tempfile.TemporaryDirectory(prefix='unixnu-bootimg-') as scratch_name:
         scratch = Path(scratch_name)
         shim = compile_shim(uefi, base, size, requires_header, scratch)
-        tree = patch_dtb(Path(dtb).read_bytes(), ctx.board.get('bootimg', {}).get('dtb_node', []), scratch)
-        if tree[:4] != b'\xd0\x0d\xfe\xed' or struct.unpack_from('>I', tree, 4)[0] != len(tree):
-            raise Error('invalid compiled device tree')
-        combined = shim + firmware
-        kernel = gzip.compress(combined, mtime=0) + tree
-        kernel_path = scratch / 'Image.gz-dtb'
-        kernel_path.write_bytes(kernel)
         if ramdisk:
             ramdisk_path = Path(ramdisk)
             if not ramdisk_path.is_file():
@@ -101,6 +116,19 @@ def build(ctx, uefi, fd, dtb, ramdisk=None, output=None):
         else:
             ramdisk_path = scratch / 'ramdisk'
             ramdisk_path.write_bytes(b'')
+        ramdisk_size = ramdisk_path.stat().st_size
+        chosen_ramdisk = None
+        if ramdisk_size:
+            ramdisk_start = image['base'] + image['ramdisk_offset']
+            chosen_ramdisk = (ramdisk_start, ramdisk_start + ramdisk_size)
+        tree = patch_dtb(Path(dtb).read_bytes(), ctx.board.get('bootimg', {}).get('dtb_node', []),
+                         chosen_ramdisk, scratch)
+        if tree[:4] != b'\xd0\x0d\xfe\xed' or struct.unpack_from('>I', tree, 4)[0] != len(tree):
+            raise Error('invalid compiled device tree')
+        combined = shim + firmware
+        kernel = gzip.compress(combined, mtime=0) + tree
+        kernel_path = scratch / 'Image.gz-dtb'
+        kernel_path.write_bytes(kernel)
         command = ['python3', mkbootimg, '--kernel', kernel_path, '--ramdisk', ramdisk_path, '-o', out]
         for key in MKBOOTIMG_FLAGS:
             if key in image:
@@ -117,11 +145,14 @@ def build(ctx, uefi, fd, dtb, ramdisk=None, output=None):
 def verify(path, combined, tree, ramdisk_path, image):
     """Unpack the image and compare every part with its input."""
     data = Path(path).read_bytes()
-    kernel_size, kernel_address, ramdisk_size, _, second_size, _, tags, page, version, _ = struct.unpack_from('<10I', data, 8)
+    kernel_size, kernel_address, ramdisk_size, ramdisk_address, second_size, _, tags, page, version, _ = struct.unpack_from('<10I', data, 8)
     if data[:8] != b'ANDROID!' or second_size or version != image['header_version'] or page != image['pagesize']:
         raise Error('boot image header does not match the requested parameters')
     if kernel_address != image['base'] + image['kernel_offset'] or tags != image['base'] + image['tags_offset']:
         raise Error('boot image load addresses do not match the requested offsets')
+    expected_ramdisk = image['base'] + image['ramdisk_offset'] if ramdisk_size else 0
+    if ramdisk_address != expected_ramdisk:
+        raise Error('boot image ramdisk load address does not match the requested offset')
     kernel = data[page:page + kernel_size]
     unpacker = zlib.decompressobj(16 + zlib.MAX_WBITS)
     if unpacker.decompress(kernel) != combined or not unpacker.eof or unpacker.unused_data != tree:
@@ -129,5 +160,11 @@ def verify(path, combined, tree, ramdisk_path, image):
     start = page * (1 + -(-kernel_size // page))
     if data[start:start + ramdisk_size] != Path(ramdisk_path).read_bytes():
         raise Error('ramdisk bytes differ')
-    return {'kernel_sha256': hashlib.sha256(kernel).hexdigest(), 'ramdisk_bytes': ramdisk_size,
-            'header_version': version, 'kernel_address': hex(kernel_address), 'tags_address': hex(tags)}
+    return {
+        'kernel_sha256': hashlib.sha256(kernel).hexdigest(),
+        'ramdisk_bytes': ramdisk_size,
+        'ramdisk_address': hex(ramdisk_address),
+        'header_version': version,
+        'kernel_address': hex(kernel_address),
+        'tags_address': hex(tags),
+    }
