@@ -1594,17 +1594,21 @@ GetShengStatus (
     return;
   }
 
-  AsciiSPrint (
-    Status,
-    Size,
-    "i=%r m=%r b=%r %lx-%lx p=%u",
-    Table->InitrdStatus,
-    Table->MapStatus,
-    Table->BlockStatus,
-    Table->MapBase,
-    Table->MapEnd,
-    Table->MapPieces
-    );
+  if (EFI_ERROR (Table->FdtStatus)) {
+    AsciiSPrint (Status, Size, "fdt=%r dtb=%lx", Table->FdtStatus, Table->Dtb);
+  } else {
+    AsciiSPrint (
+      Status,
+      Size,
+      "i=%r m=%r b=%r %lx-%lx p=%u",
+      Table->InitrdStatus,
+      Table->MapStatus,
+      Table->BlockStatus,
+      Table->MapBase,
+      Table->MapEnd,
+      Table->MapPieces
+      );
+  }
 }
 
 VOID
