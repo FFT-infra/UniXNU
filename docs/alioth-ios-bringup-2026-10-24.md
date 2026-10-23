@@ -13,6 +13,9 @@ in one boot, from a persistent UFS root on `userdata`.
 Screen: `Wednesday, December 31  4:17` — SpringBoard's own lock screen, drawn
 with CoreAnimation's software renderer. No GPU driver involved.
 
+Touch works: real finger input reaches SpringBoard and the lock screen is
+operable (v29, 2026-10-24).
+
 ## Chain that now works
 
 ```
@@ -90,6 +93,30 @@ Separately, the kernel console and SpringBoard share one framebuffer: every
 kernel line repaints over the UI. `sweetfb_noconsole=1`
 (`iokit/Kernel/arm/SweetFramebuffer.cpp:320`) stops console drawing from the
 first swap onward; output still reaches the persistent log and panics still draw.
+
+## 3. Touch driver was for the wrong board (v29)
+
+`sweet_touch.c` described serial engine 7 as an I2C bus at `0xa84000` with a
+Goodix GT9896 at address `0x5d`, and read its pins through a controller at
+`0x03900000`. None of that is this phone. The K40 has:
+
+| | driver had | K40 has |
+|:--|:--|:--|
+| bus | `0xa84000` I2C, SE7 | `0x990000` SPI, SE4 |
+| chip | Goodix GT9896 @ `0x5d` | FocalTech, ID `0x5652` |
+| pin controller | `0x03900000` | `0x0f000000` (north `0x0f900000`, south `0x0f500000`) |
+| clock RCG | `0x18148` (SE7) | `0x174d0` (SE4) |
+| rails | ldoc11 only | ldoc10 3.0 V + ldoc1 1.8 V |
+
+The driver could never have worked. Rewritten after `redwood_goodix.c`
+(ios-alioth), whose `PLATFORM_ALIOTH` branch was verified on this same phone
+on 2026-10-22: GENI SPI in FIFO mode with a by-hand pin fallback, FTS 5.x
+framing with CRC-16/Kermit, and reports decoded from 8640x19200 into the
+1080x2400 panel space. `sweet_rpmh_vreg_enable` grew a board table so ldoc10
+and ldoc1 are accepted while unknown rails are still refused.
+
+Patches: `patches/xnu/native-alioth-touch-focaltech-se4.patch` and
+`patches/xnu/native-alioth-touch-rails.patch`.
 
 ## Known-open
 

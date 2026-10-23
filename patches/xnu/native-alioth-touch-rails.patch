@@ -1,0 +1,53 @@
+From: alioth iOS bring-up 2026-10-24
+Subject: [PATCH] sweet_rpmh: declare ldoc10 and ldoc1 as well as ldoc11
+
+The touch screen runs on ldoc10 (3.0 V) and ldoc1 (1.8 V); only ldoc11
+(the panel's I/O, 3.2 V) was accepted, so the touch driver's rails were
+refused with EINVAL and the chip never powered up. Replace the single
+hard-coded name with a small board table of name and voltage window, so
+a rail is still refused rather than given PMIC5-LDO policy it may not want.
+
+--- a/bsd/dev/sweet_rpmh.c
++++ b/bsd/dev/sweet_rpmh.c
+@@ -324,12 +324,39 @@
+ 	return 0;
+ }
+ 
++/*
++ * The two rails this board's devices are on. A name not on this list is refused
++ * rather than given PMIC5-LDO policy it may not want: the touch screen is on
++ * ldoc10 (3.0 V) and ldoc1 (1.8 V), the panel's I/O on ldoc11 (3.2 V).
++ */
++static const struct {
++	const char *name;
++	unsigned min_mv, max_mv;
++} rh_board_rails[] = {
++	{ "ldoc11", 2950, 3400 },
++	{ "ldoc10", 2950, 3400 },
++	{ "ldoc1",  1700, 1900 },
++};
++
+ int
+ sweet_rpmh_vreg_enable(const char *res, unsigned mv)
+ {
++	bool known = false;
++
++	for (unsigned i = 0; i < sizeof(rh_board_rails) / sizeof(rh_board_rails[0]); ++i) {
++		if (res && strcmp(res, rh_board_rails[i].name) == 0) {
++			if (mv < rh_board_rails[i].min_mv || mv > rh_board_rails[i].max_mv) {
++				printf("SWEET RPMH: %s outside %u..%u mV\n", res,
++				    rh_board_rails[i].min_mv, rh_board_rails[i].max_mv);
++				return EINVAL;
++			}
++			known = true;
++			break;
++		}
++	}
+ 	/* Board-specific helper: do not apply PMIC5-LDO policy to arbitrary resources. */
+-	if (!res || strcmp(res, "ldoc11") || mv < 2950 || mv > 3400) {
+-		printf("SWEET RPMH: expected ldoc11 and 2950..3400 mV\n");
++	if (!known) {
++		printf("SWEET RPMH: %s is not a rail this board declares\n", res ? res : "(null)");
+ 		return EINVAL;
+ 	}
+ 	if (__atomic_exchange_n(&rh_lock, 1, __ATOMIC_ACQUIRE)) {
