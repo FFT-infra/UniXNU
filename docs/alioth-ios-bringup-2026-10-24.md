@@ -116,7 +116,16 @@ Snapdragon 821 / Adreno 530 with GPU-accelerated UI. Approach:
   `sweetenv=backboardd:DYLD_INSERT_LIBRARIES=/usr/lib/sweetgl.dylib`.
 - No Metal; CoreAnimation falls back to its OpenGL ES renderer.
 
-That work is ~3,900 added lines across ~30 patches on a530. Nothing equivalent
-exists for a650/SM8250 yet. The SoC-specific unknowns are the GPU register base,
-the GPUCC clock/power block, the SMMU instance, the a650 microcode blobs, and
-whether SM8250's TrustZone lets a non-Android kernel load the zap shader.
+That work is ~3,900 added lines across ~30 patches on a530.
+
+For a650/SM8250 the hardware facts are no longer unknown — they were measured on
+this K40. See `alioth-gpu-a650-facts.md`. Short version: steps 1–19 of the Adreno
+bring-up pass on real hardware (GMU firmware, HFI, 3D core at 525 MHz, SMMU
+stream mask `0x401`, and the zap shader authenticated and started by TrustZone).
+Step 20 — writing `CP_SQE_CNTL=1` to start the command processor — resets the
+whole phone, and a long list of causes has already been excluded. That is the
+ceiling today.
+
+Our kernel has no GPU driver at all: no `adreno`, no `SweetGPU`, no
+`RedwoodGPU`. Adding one is a port of `redwood_adreno.c`, not a configuration
+change.
