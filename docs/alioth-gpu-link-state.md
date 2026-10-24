@@ -232,3 +232,83 @@ register sequence. Deciding which means reading `/arm-io` `ranges` out of
 
 Until that is settled, steps 1-21 have never run on this phone.
 
+## 22:07 — the guard is passed, and the first SMC hangs
+
+`REDWOOD_SOC_BASE` is now `0x01000000`. The proof is in the ADT, not in a
+guess: the GIC's `reg` in this tree's ADT is relative to that base, and
+`0x01000000 + 0x16a00000 = 0x17a00000`, which is SM8250's GICD — the address
+the kernel is demonstrably taking its interrupts from. `0x00400000` would put
+the GICD at `0x16e00000`, which is nothing. QEMU's own ADT puts `arm-io` at
+`0x17000000`, so the guard still separates the phone from the test rig.
+
+Disassembly of the rebuilt object confirms the change took:
+`cmp x0, #0x400, lsl #12` became `mov w8, #0x1000000; cmp x0, w8`.
+
+`v41g-gpu120-adt` (booted 22:07:43) then ran steps 1 through 18 and stopped at
+19:
+
+| step | what it showed |
+|:--|:--|
+| 17 | `THE 3D CORE HAS POWER AND ANSWERS`, 3D core clock 525 MHz, `gpu_rbbm_status = 0x1` |
+| 18 | SMMU context 0 built and read back; `a650_sqe.fw`, 31632 bytes, into the ring; three memory windows |
+| 19 | `about to ask TrustZone to give up the zap shader: smc 0x42000206, arguments 0xd, 0, 0` — **never returns** |
+
+That is the first register sequence this phone has ever executed, and the
+first time the driver reached TrustZone.
+
+### Why step 19 hangs, and what it is not
+
+`0x42000206` is `SCM_64 | SCM_SIP | SCM_PAS_SHUTDOWN` on image 13. `scm()`
+issues it as `smc #0` with `x0..x7`, and the CPU does not come back.
+
+The cpus=8 photograph proves the rest of the system kept running while cpu0
+sat in the trap: `SWEET TOUCH` advanced 125 → 1250 and `SMP --- sample 0`
+printed. So this is a hard SMC hang, not a GPU register read that faulted.
+
+Two things were initially suspected and are now ruled out:
+
+- **Not a PAS ordering problem.** The `gpu=1` path sets
+  `skip_steps = 1<<10 | 1<<11 | 1<<12`, which skips steps 10, 11 and 12. Step
+  11 is `step_trustzone` and step 12 is `step_zap_signature` — so this kernel
+  has issued **no** PAS call before this one. There is no earlier
+  `PAS_INIT_IMAGE` on image 13 for `PAS_SHUTDOWN` to conflict with.
+- **Not the ADT.** Steps 1-18 read real registers through the same ADT and got
+  real answers back.
+
+What is left is that the SCM channel itself has never been exercised by this
+kernel. `step_trustzone` is the only place that asks
+`SCM_IS_CALL_AVAILABLE` first, and `gpu=1` skips it. The `0x42000206` call is
+therefore the first SMC this kernel ever makes, on an untested channel.
+
+### The log had to be forced out
+
+`cpus=1` plus `pause_ms=0` means the GPU block never sleeps, so
+`sweet_log_thread` never gets scheduled and the ring is never copied to the
+medium. The screen was the only record of the 22:07 run.
+
+`scm()` now calls `sweet_log_flush()` immediately before the `smc #0`
+(`redwood_adreno.c`, declared `extern int sweet_log_flush(void)` at the top).
+Verified in the object: `bl _sweet_log_flush` at `0x5fbc`, `smc #0` at
+`0x5fe0`. `sweet_log_flush()` is the same entry point `sweet_autoreset.c:135`
+uses before it resets the phone; it takes `sweet_ufs_lock` and writes through
+the bounce buffer, so it is safe from thread context.
+
+That produced `kernel.pie.v41h` (`868a331174205335`) and
+`v41h-gpu120-adt.img`. It was booted at 22:43:41 and did not come back on USB
+— expected, since `cpus=1` also keeps the autoreset thread off the CPU.
+
+### The next variable
+
+Not the zap order. `v41h-scm11-adt.img` runs **only** step 11
+(`adreno=11 adreno_only=11`): the four `SCM_IS_CALL_AVAILABLE` probes and the
+`PAS_IS_SUPPORTED` matrix, and nothing else. `step_trustzone` has no
+precondition on GPU state, so it is the cheapest test of whether this kernel
+can make an SMC at all.
+
+- If it hangs on the first `SCM_IS_CALL_AVAILABLE`, the channel is the
+  problem, not the GPU, and every PAS path is blocked behind it.
+- If it returns, the channel works and `PAS_SHUTDOWN` on image 13 is
+  specifically what the secure world refuses to answer — which points at
+  `SCM_FAST` (Linux's `qcom_scm_pas_shutdown` does *not* set it, and
+  `zap_unload()` does not either) or at the image id.
+
