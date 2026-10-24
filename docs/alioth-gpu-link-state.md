@@ -312,3 +312,99 @@ can make an SMC at all.
   `SCM_FAST` (Linux's `qcom_scm_pas_shutdown` does *not* set it, and
   `zap_unload()` does not either) or at the image id.
 
+## The channel is fine; two PAS calls are not
+
+`v41h-scm11-adt.img` (`adreno=11 adreno_only=11`) ran step 11 alone at 23:32:58.
+It made **fifteen** SMC calls and every one returned:
+
+| call | function id | result |
+|:--|:--|:--|
+| is-call-available | `0xc2000601` | 0, answer `0x1` |
+| has init_image | `0xc2000601` | 0, answer `0x1` |
+| has auth_and_reset | `0xc2000601` | 0, answer `0x1` |
+| audio, both ways | `0xc2000207` / `0x42000207` | 0, 0 |
+| modem, both ways | `0xc2000207` / `0x42000207` | **-3145792** (`0xffd00000`), 0 |
+| video, both ways | `0xc2000207` / `0x42000207` | 0, 0 |
+| GPU, both ways | `0xc2000207` / `0x42000207` | 0, 0 |
+
+`"supported", asked at once / as Linux asks: audio 0/0, modem 0/0, video 0/0,
+GPU 0/0`, then `step 11: done` and `alive 1..18 s after step 11`. So the channel
+works, the non-FAST 64-bit form works, and the image id is not rejected
+outright. The hang is specific to particular PAS commands.
+
+`v41i` then removed `zap_unload()` from the path entirely — `zap_unload()` is
+now behind `adreno_zapunload=1`, because `PAS_SHUTDOWN` (`0x42000206`) wedged
+cpu0 twice and Linux's zap path never asks it anyway (`zap_shader_load_mdt` is
+`qcom_mdt_load` → `pas_auth_and_reset`, nothing else). `kernel.pie.v41i`
+(`2e0c0262e3311533`), booted 23:42:38:
+
+```
+adreno: 19: the zap shader goes into two pages of this kernel's own at 0x1043f0000
+adreno: 19: 6860 bytes of header in 16384 pages at physical 0x104268000
+adreno: 19: about to ask TrustZone to take the zap shader's signature: smc 0x42000201, arguments 0xd, 0x104268000, 0x1acc
+adreno: 19: TrustZone returns 0, answer 0
+adreno: 19: about to ask TrustZone where the image will be: smc 0x42000202, arguments 0xd, 0x1043f0000, 0x2000
+adreno: 19: TrustZone returns 0, answer 0
+adreno: 19: the reserved memory begins 00 00 00 00, the zap shader 10 d0 6d 01
+adreno: 19: about to write 1676 bytes at 0x1043f0000
+adreno: 19: about to ask TrustZone to authenticate the zap shader and run it: smc 0x42000205, arguments 0xd, 0, 0
+```
+
+`PAS_INIT_IMAGE` and `PAS_MEM_SETUP` both return 0/0. `PAS_AUTH_AND_RESET`
+never returns. Two of the three PAS calls hang, and only on this phone.
+
+### The firmware is not the problem
+
+Every file in `out/alioth/fw-gpu/` is byte-identical to the phone's own
+`vendor_a` copy, pulled through recovery and compared by sha256:
+`a650_zap.mdt` `e768fe579a4ac738`, `a650_zap.b02` `a415e5452fa8f597`,
+`a650_sqe.fw` `b4c27420fd6a5c6b`, `a650_gmu.bin` `df79fa8482fcc758`.
+
+`a650_zap.mdt` is 6860 bytes and its bytes from `0x1000` on are `0xff`. That is
+not truncation: it is `a650_zap.b00` (148) followed by `a650_zap.b01` (6712),
+which is exactly the metadata `qcom_mdt_pas_init` assembles, and
+`zap_header()`'s own check (`148 + 6712 == 6860`) agrees. The full image is
+`a650_zap.elf`, 13964 bytes, which is `0x368c` rounded up — the same file the
+phone ships.
+
+`PAS_INIT_IMAGE` accepting it (answer 0) is the corroboration: the secure
+world read the header and did not object.
+
+### What is left: where the two pages are
+
+`pipa` refuses exactly the arrangement this driver uses. Its `zapLoad` opens
+with
+
+```cpp
+// The region must not be memory XNU hands out: TrustZone locks it after authentication.
+if (kZapPhys + kZapBytes > vm_first_phys && kZapPhys < vm_last_phys) return stop(-20);
+```
+
+and takes `kZapPhys = 0x55615000` from the device tree's `no-map` region. This
+driver's a650 row has `zap_memory = 0`, so `step_zap_load()` calls
+`kmem_alloc_contig()` and gets `0x1043f0000` — inside the range the kernel
+manages.
+
+That range is now known exactly. `chosen`'s `dram-base` is `0x100000000` and
+`dram-size` is `0x00000000fcb00000`, so XNU owns
+`0x100000000 .. 0x1fcb00000`. `0x1043f0000` is inside it; the device tree's
+`pil_gpu_region` (`0x8681a000`, 2 pages, `no-map`) is below it and outside.
+
+The facts file says reading `0x8681a000` stops the processor. That was about
+the CPU reading it; `PAS_MEM_SETUP` returning 0 shows TrustZone takes the
+address. `step_zap_load()` does read the first four bytes before writing
+(`about to look at the memory at`), so a CPU-side block would show up there,
+one line before the write, and would not be confused with an AUTH hang.
+
+`adreno_zap_mem=ADDR` already exists (`redwood_adreno.c:315`) and takes the
+device tree's address without any code change — so the next boot is one boot
+argument, not a rebuild.
+
+### Still to reconcile
+
+`alioth-gpu-a650-facts.md:38-42` records step 19 succeeding on real hardware —
+`give-up`, the signature check and `SCM_PAS_MEM_SETUP` all returning 0, then
+`TRUSTZONE HAS AUTHENTICATED AND STARTED THE ZAP SHADER`. Today `give-up` and
+`auth_and_reset` both wedge cpu0. One of the two records is wrong, and the
+difference between the two runs is what would explain the hang.
+
