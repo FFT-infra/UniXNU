@@ -1,0 +1,124 @@
+From: alioth iOS bring-up 2026-10-24
+Subject: [PATCH] sweet_amfi: grant privileges from the process's own entitlements
+
+sweet_sandbox_priv_grant granted only PRIV_WORK_INTERVAL and refused every
+other privilege. That is what the boot log shows for healthd and logd
+(PRIV_GLOBAL_PROC_INFO, 1002) and identityservicesd (PRIV_SKYWALK_REGISTER_USER_PIPE,
+12000), and the denials are on the path of the daemons that restart in a loop.
+
+Take the reference implementation's rule (kern_minimac.c): a table of
+privilege -> entitlement, granted only when the calling process's own
+signature carries the entitlement, and only when the question is about its
+own credential (cred == kauth_cred_get()). PRIV_WORK_INTERVAL stays
+unconditional, because UIKit creates a CA_CLIENT work interval as soon as
+anything scrolls and treats a refusal as a programming error.
+
+The table is the reference's 40 entries verbatim; all 40 privilege constants
+exist in this tree's bsd/sys/priv.h. Boot-arg privs=0 turns the table off
+without losing the PRIV_WORK_INTERVAL grant.
+
+--- a/bsd/kern/sweet_amfi.c
++++ b/bsd/kern/sweet_amfi.c
+@@ -314,8 +314,62 @@
+  * -> mac_priv_grant); on iOS Sandbox/AMFI grant them. Without a grant UIKit
+  * apps die in CoreAnimation setup: work_interval_create(CA_CLIENT) needs
+  * PRIV_WORK_INTERVAL ("Failed to create work interval", SpringBoard).
+- * Grant that one; log the first denial of each other privilege per process.
++ *
++ * Two rules, both taken from the reference implementation (kern_minimac.c):
++ * PRIV_WORK_INTERVAL is granted unconditionally, because UIKit asks for it as
++ * soon as anything scrolls and treats a refusal as a programming error; every
++ * other privilege is granted only when the calling process's own signature
++ * carries the matching entitlement. Anything else is denied and logged once.
+  */
++static const struct {
++	int priv;
++	const char *entitlement;
++} sweet_priv_entitlements[] = {
++	{ PRIV_PROC_UUID_POLICY, "com.apple.private.kernel.uuid-policy" },
++	{ PRIV_GLOBAL_PROC_INFO, "com.apple.private.kernel.global-proc-info" },
++	{ PRIV_SYSTEM_OVERRIDE, "com.apple.private.kernel.system-override" },
++	{ PRIV_HW_DEBUG_DATA, "com.apple.private.kernel.hw-debug-data" },
++	{ PRIV_SELECTIVE_FORCED_IDLE, "com.apple.private.kernel.selective-forced-idle" },
++	{ PRIV_DARKBOOT, "com.apple.private.kernel.darkboot" },
++	{ PRIV_AUDIO_LATENCY, "com.apple.private.kernel.audio_latency" },
++	{ PRIV_KTRACE_BACKGROUND, "com.apple.private.kernel.ktrace-background" },
++	{ PRIV_SETPRIORITY_DARWIN_ROLE, "com.apple.private.kernel.setpriority-darwin-role" },
++	{ PRIV_PACKAGE_EXTENSIONS, "com.apple.private.kernel.set-package-extensions" },
++	{ PRIV_TRIM_ACTIVE_FILE, "com.apple.private.apfs.trim-active-file" },
++	{ PRIV_PROC_CPUMON_OVERRIDE, "com.apple.private.kernel.override-cpumon" },
++	{ PRIV_VM_PRESSURE, "vm-pressure-level" },
++	{ PRIV_VM_JETSAM, "com.apple.private.kernel.jetsam" },
++	{ PRIV_NET_PRIVILEGED_TRAFFIC_CLASS, "com.apple.private.network.privileged-traffic-class" },
++	{ PRIV_NET_PRIVILEGED_SOCKET_DELEGATE, "com.apple.private.network.socket-delegate" },
++	{ PRIV_NET_INTERFACE_CONTROL, "com.apple.private.network.interface-control" },
++	{ PRIV_NET_PRIVILEGED_NETWORK_STATISTICS, "com.apple.private.network.statistics" },
++	{ PRIV_NET_PRIVILEGED_NECP_POLICIES, "com.apple.private.necp.policies" },
++	{ PRIV_NET_RESTRICTED_AWDL, "com.apple.private.network.awdl.restricted" },
++	{ PRIV_NET_QOSMARKING_POLICY_OVERRIDE, "com.apple.private.network.qos-marking-policy-override" },
++	{ PRIV_NET_RESTRICTED_MULTIPATH_EXTENDED, "com.apple.developer.networking.multipath_extended" },
++	{ PRIV_NET_RESTRICTED_ROUTE_NC_READ, "com.apple.developer.networking.route_nc_read" },
++	{ PRIV_NET_VALIDATED_RESOLVER, "com.apple.private.validated-resolver" },
++	{ PRIV_NET_CUSTOM_PROTOCOL, "com.apple.developer.networking.custom-protocol" },
++	{ PRIV_NET_PRIVILEGED_NECP_DROP_ALL_BYPASS, "com.apple.private.necp.drop_all_bypass" },
++	{ PRIV_NET_PRIVILEGED_IPSEC_WAKE_PACKET, "com.apple.private.network.ipsec-wake-packet" },
++	{ PRIV_NETINET_RESERVEDPORT, "com.apple.private.network.reserved-port" },
++	{ PRIV_NETINET_TCP_KA_OFFLOAD, "com.apple.developer.networking.tcp_ka_offload" },
++	{ PRIV_SKYWALK_REGISTER_USER_PIPE, "com.apple.private.skywalk.register-user-pipe" },
++	{ PRIV_SKYWALK_REGISTER_KERNEL_PIPE, "com.apple.private.skywalk.register-kernel-pipe" },
++	{ PRIV_SKYWALK_REGISTER_NET_IF, "com.apple.private.skywalk.register-net-if" },
++	{ PRIV_SKYWALK_REGISTER_FLOW_SWITCH, "com.apple.private.skywalk.register-flow-switch" },
++	{ PRIV_SKYWALK_OBSERVE_ALL, "com.apple.private.skywalk.observe-all" },
++	{ PRIV_SKYWALK_OBSERVE_STATS, "com.apple.private.skywalk.observe-stats" },
++	{ PRIV_VFS_OPEN_BY_ID, "com.apple.private.vfs.open-by-id" },
++	{ PRIV_VFS_MOVE_DATA_EXTENTS, "com.apple.private.vfs.move-data-extents" },
++	{ PRIV_VFS_SNAPSHOT, "com.apple.private.vfs.snapshot" },
++	{ PRIV_VFS_DATALESS_RESOLVER, "com.apple.private.vfs.dataless-resolver" },
++	{ PRIV_VFS_SETSIZE, "com.apple.private.vfs.setsize" },
++};
++
++/* boot-arg privs=0 disables the entitlement table; PRIV_WORK_INTERVAL stays. */
++static TUNABLE(uint32_t, sweet_priv_by_entitlement, "privs", 1);
++
+ #define SWEET_PRIV_LOG_MAX      64
+ static struct {
+ 	int  priv;
+@@ -323,12 +377,37 @@
+ } sweet_priv_logged[SWEET_PRIV_LOG_MAX];
+ static int sweet_priv_logged_count;
+ 
++/* The reference helper: KERN_SUCCESS when proc's own signature grants name. */
++static bool
++sweet_priv_entitled(proc_t proc, const char *entitlement)
++{
++	if (proc == NULL || entitlement == NULL || amfi == NULL) {
++		return false;
++	}
++	return amfi->OSEntitlements.queryEntitlementBooleanWithProc(proc, entitlement) ==
++	       KERN_SUCCESS;
++}
++
+ static int
+-sweet_sandbox_priv_grant(kauth_cred_t cred __unused, int priv)
++sweet_sandbox_priv_grant(kauth_cred_t cred, int priv)
+ {
+ 	if (priv == PRIV_WORK_INTERVAL) {
+ 		return 0;
+ 	}
++	/* Entitlements describe the current process, so only answer about its own
++	 * credential; a check against another credential keeps the denial path. */
++	if (sweet_priv_by_entitlement && cred == kauth_cred_get()) {
++		for (unsigned i = 0; i < sizeof(sweet_priv_entitlements) /
++		    sizeof(sweet_priv_entitlements[0]); i++) {
++			if (sweet_priv_entitlements[i].priv == priv) {
++				if (sweet_priv_entitled(current_proc_EXTERNAL(),
++				    sweet_priv_entitlements[i].entitlement)) {
++					return 0;
++				}
++				break;
++			}
++		}
++	}
+ 	char name[20];
+ 	proc_selfname(name, sizeof(name));
+ 	for (int i = 0; i < sweet_priv_logged_count; i++) {

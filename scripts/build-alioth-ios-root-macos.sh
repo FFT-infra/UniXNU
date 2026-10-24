@@ -14,6 +14,7 @@ SECURE_OVERLAY=${SECURE_OVERLAY:-}
 IOS_SWEET=${IOS_SWEET:-/Users/xinyang/Lab/Bridge/WorkSpace/alioth/ios-sweet}
 REMOTE=${REMOTE:-orb}
 POST="$ROOT/scripts/alioth-ios-root-post.py"
+WALLPAPER="$ROOT/scripts/make-wallpaper-overlay-alioth.py"
 VERIFY="$ROOT/scripts/verify-alioth-ios-root.py"
 
 case "$SIZE" in
@@ -22,7 +23,7 @@ case "$SIZE" in
 esac
 for path in "$OS_VOLUME/System/Library/xpc/launchd.plist" \
             "$SYS_VOLUME/System/Library" "$APP_VOLUME/System/Library" \
-            "$POST" "$VERIFY"; do
+            "$POST" "$VERIFY" "$WALLPAPER"; do
   [[ -e "$path" ]] || { echo "missing input: $path" >&2; exit 2; }
 done
 [[ -z "$SECURE_OVERLAY" || -d "$SECURE_OVERLAY" ]] || {
@@ -59,6 +60,7 @@ fi
 REMOTE_OUT=$(shared_remote_path "$OUT")
 REMOTE_POST=$(shared_remote_path "$POST")
 REMOTE_VERIFY=$(shared_remote_path "$VERIFY")
+REMOTE_WALLPAPER=$(shared_remote_path "$WALLPAPER")
 REMOTE_MOUNT="/tmp/alioth-ios-root-$$"
 
 remote() {
@@ -127,6 +129,7 @@ remote "set -euo pipefail; rm -rf '$REMOTE_MOUNT'; mkdir -p '$REMOTE_MOUNT'; \
   LIBGUESTFS_BACKEND=direct sudo -E guestmount --rw --format=raw \
     -a '$REMOTE_OUT' -m /dev/sda '$REMOTE_MOUNT'; \
   sudo python3 '$REMOTE_POST' '$REMOTE_MOUNT'; \
+  sudo python3 '$REMOTE_WALLPAPER' '$REMOTE_MOUNT'; \
   sudo python3 '$REMOTE_VERIFY' '$REMOTE_MOUNT'; \
   sudo guestunmount '$REMOTE_MOUNT'; trap - EXIT; rmdir '$REMOTE_MOUNT'"
 

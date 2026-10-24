@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Qualify original ordinary-ARM64 block-storage ABI using public Darwin 23 source."""
+"""Qualify original ordinary-ARM64 block-storage ABI using public source."""
+import argparse
 import hashlib
 import json
 from pathlib import Path
@@ -12,10 +13,19 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'kits/NativePrelink'))
 import native_prelink as np
-source = ROOT / 'refer/IOStorageFamily'
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--candidate', type=Path, default=ROOT / 'build/native-prelink/native-apfs-load-positive.macho',
+                    help='Prelink candidate whose IOStorageFamily and APFS extents are the ABI source')
+parser.add_argument('--reference', type=Path, default=ROOT / 'refer/IOStorageFamily')
+parser.add_argument('--kernelcache', type=Path, default=ROOT / '.cache/firmware/kernelcache.macho/kernelcache.release.ipad7.decompressed')
+parser.add_argument('--recipe', type=Path,
+                    default=ROOT / 'build/xnu/ios-obj/DEVELOPMENT_ARM64_BCM2837/iokit/DEVELOPMENT/IOPlatformExpert.cpo.json',
+                    help='Compile recipe used to build the annotation-only reference object')
+args = parser.parse_args()
+source = args.reference.resolve()
 revision = subprocess.check_output(['git', '-C', source, 'rev-parse', 'HEAD'], text=True).strip()
 if revision != 'e45fbe30a7879e0b16e26dddb78538f1b00e0bff':
-    raise SystemExit('Unexpected public Darwin 23 IOStorageFamily source')
+    raise SystemExit('Unexpected public IOStorageFamily source')
 out = ROOT / 'build/storage-abi'
 headers = out / 'include/IOKit/storage'
 headers.mkdir(parents=True, exist_ok=True)
@@ -26,7 +36,7 @@ for path in source.glob('*.h'):
 sdk = Path(subprocess.check_output(['xcrun', '--sdk', 'macosx', '--show-sdk-path'], text=True).strip())
 conditions = sdk / 'usr/include/TargetConditionals.h'
 shutil.copyfile(conditions, out / 'include/TargetConditionals.h')
-record = json.loads((ROOT / 'build/xnu/ios-obj/DEVELOPMENT_ARM64_BCM2837/iokit/DEVELOPMENT/IOPlatformExpert.cpo.json').read_text().strip().rstrip(','))
+record = json.loads(args.recipe.read_text().strip().rstrip(','))
 obj_path = out / 'IOBlockStorageDevice-reference.o'
 arguments = record['arguments']
 command, index = [], 0
@@ -41,11 +51,13 @@ while index < len(arguments):
         index += 1
     elif value == '-Xclang' and arguments[index + 1].startswith('-W'):
         index += 1
+    elif value == '-isysroot':
+        index += 1
     elif not value.startswith('-W') and value not in ('-MD', '-MP'):
         command.append(value)
     index += 1
 command += ['-I', str(out / 'include'), '-I', str(ROOT / '.cache/xnu-work/osfmk'),
-            '-Wall', '-Wextra', '-Werror', '-Wno-unused-parameter', '-Wno-deprecated-declarations',
+            '-Wno-incompatible-sysroot', '-Wall', '-Wextra', '-Werror', '-Wno-unused-parameter', '-Wno-deprecated-declarations',
             '-Wno-c99-designator', '-Wno-reorder-init-list', '-Wno-unnecessary-virtual-specifier',
             '-Wno-deprecated-enum-enum-conversion']
 (out / 'compile-command.json').write_text(json.dumps(command, indent=2) + '\n')
@@ -91,11 +103,12 @@ for at in range(vtable + 16, end, 8):
         break
     methods.append(relocations[at])
 require(len(methods) == 190 and methods.count('___cxa_pure_virtual') == 14, 'Public iOS class dispatch shape changed')
-kernel_path = ROOT / 'build/native-prelink/native-apfs-load-positive.macho'
+kernel_path = args.candidate.resolve()
 kernel = kernel_path.read_bytes()
 plan = json.loads(kernel_path.with_suffix('.json').read_text())
 require(hashlib.sha256(kernel).hexdigest() == plan['candidate_sha256'] and
-        plan['original_sha256'] == 'f18b4df865405f2a287b84977d7aca745e056d656d9fc9df1662970ce2969de7', 'Unexpected original candidate provenance')
+        hashlib.sha256(args.kernelcache.read_bytes()).hexdigest() == plan['original_sha256'],
+        'Unexpected original candidate provenance')
 native = np.macho(kernel)
 exports = np.exports(kernel, native)
 by_name = {name: va for va, names in exports.items() for name in names}
@@ -177,7 +190,10 @@ if immediate & 0x100000:
     immediate -= 0x200000
 meta = (function & ~4095) + immediate * 4096 + (add >> 10 & 4095)
 service_meta = by_name['__ZN9IOService10gMetaClassE']
-d = json.loads((ROOT / 'build/darwinboot-storage-native-metadata/gdb-stop.json').read_text())
+snapshot = ROOT / 'build/darwinboot-storage-native-metadata/gdb-stop.json'
+if not snapshot.is_file():
+    raise SystemExit('Missing live storage metadata snapshot; refusing to fabricate a binding audit')
+d = json.loads(snapshot.read_text())
 require(d['kernel_sha256'] == plan['candidate_sha256'] and not d['bounded_timeout_interrupted'], 'Wrong or incomplete live storage metadata observation')
 actual = bytes.fromhex(d['memory'][f'{meta:x}:50'])
 service = bytes.fromhex(d['memory'][f'{service_meta:x}:50'])

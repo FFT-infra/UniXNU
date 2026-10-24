@@ -1,0 +1,30 @@
+From: alioth iOS bring-up 2026-10-24
+Subject: [PATCH] work_interval: soft-fail a second CA_CLIENT interval
+
+This tree is compiled with -DXNU_TARGET_OS_OSX, so the non-app half of
+native-work-interval-soft-fail is already active here (work_interval.c:1053)
+and needs no change. The other half is missing: a task that already holds a
+CA_CLIENT work interval gets KERN_FAILURE, and UIKit takes that as a
+programming error and aborts the process.
+
+Mark the interval IGNORED instead, which is exactly what the non-app path
+does: the caller presses the buttons and the interval is simply not connected
+to anything.
+
+--- a/osfmk/kern/work_interval.c
++++ b/osfmk/kern/work_interval.c
+@@ -1066,7 +1066,13 @@
+ #endif /* XNU_TARGET_OS_OSX */
+ 		}
+ 		if (task_set_ca_client_wi(creating_task, true) == false) {
+-			return KERN_FAILURE;
++			/*
++			 * A second CA_CLIENT interval in one task is accepted but
++			 * left unconnected, the same way the non-app case above
++			 * soft-fails. UIKit creates one per task and treats a
++			 * refusal as a programming error.
++			 */
++			create_flags |= WORK_INTERVAL_FLAG_IGNORED;
+ 		}
+ 	}
+ 
