@@ -123,7 +123,7 @@ is what step 20 is about.
 
 ## Where this stands
 
-One boot of the GPU objects has been read, and it says nothing about them.
+Four boots on the working ADT, all read, all clean.
 
 The v41d log pulled at 18:17 is **not** from v41d. Its ring header is
 `total 151574, flush #61`, byte-identical to the ring pulled at 19:14 with the
@@ -138,64 +138,97 @@ thread and the log flush are all started from inside that function.
 not a symptom. The `v40b-sample600` run at 16:37 ended the same way and was
 healthy. It is not evidence either way.
 
-| boot | image | kernel | cmdline | ring after |
-|:--|:--|:--|:--|:--|
-| 16:37 | v40b-sample600 | v40 | `sweet-autoreset=600` | written; ends `600 s elapsed, resetting` |
-| 17:37 | v41d-gpu20 | v41d | `gpu=1` absent | **untouched** — still the 16:37 run |
-| 19:16 | v41e-ctl120 | v41e | `gpu=1` absent, autoreset 120 s | **not read yet** — phone off, needs power-on |
+| boot | image | kernel | what it showed |
+|:--|:--|:--|:--|
+| 16:37 | v40b-sample600 | v40 | reached iOS (the pre-ADT-discovery baseline) |
+| 17:37 | v41d-gpu20 | v41d | **never booted** — broken ADT, ring untouched |
+| 19:16 | v41e-ctl120 | v41e | **never booted** — broken ADT, ring untouched |
+| 21:19 | v40-ctl120-adt | v40 | **reached iOS**; no `adreno:` lines — the driver is not in v40 |
+| 21:26 | v41f-ctl120-adt | v41f | **reached iOS**; no `adreno:` lines — objects in, driver never called |
+| 21:29 | v41e-ctl120-adt | v41e | **reached iOS**; `adreno: SoC a660 (an Adreno 642L)` twice |
+| 21:33 | v41e-gpu120-adt | v41e | **reached iOS**; `adreno: SoC a650 (an Adreno 650)`, then the SoC-base guard |
 
-The 19:16 run is the control: the driver is called but `gpu=1` is absent, so
-`redwood_adreno_init()` runs `soc_select()` — which prints unconditionally —
-and then returns at the boot-arg test. Its ring is the one thing that would
-separate "the driver is inert without `gpu=1`" from "the driver kills the kernel
-before it prints". That pull is the next step, and it costs one power-on.
+The control is settled. v41f differs from v40 only by five linked objects and
+boots identically — no constructor kills anything. v41e differs from v41f only
+by `sweet_ufs.o` calling the driver, and prints `soc_select()`'s line, which
+runs before any boot-arg test. So the call is safe too, and the objects are in.
 
-v41d is not being read as evidence for a second reason too: it changed two
-things at once — `sweet_ufs.o` calling `redwood_adreno_init()` **and**
-`SweetSurface.cpo`/`SweetFramebuffer.cpo` rebuilt with clang 21 (every other
-object in the link is clang 15). Both are backed out in v41e/v41f: the clang 15
-`SweetSurface`/`SweetFramebuffer` are back in the response, and `RedwoodGPU.cpp`
-was rewritten to need nothing from `SweetSurface.h` beyond what it already
-exported. `kernel.pie.v41f` is that: the five GPU objects in, the driver never
-called, nothing else changed.
+`v41e-gpu` is the first boot where `gpu=1` took effect, and it stopped at
+`start_by_itself()`:
 
-The images built and waiting:
+```
+adreno: THE GPU IS NOT STARTED: gpu=1 is for the phone, and this is not it
+```
 
-| image | kernel | what it tests |
-|:--|:--|:--|
-| `alioth-ios16-0081-markers-v41e-ctl120.img` | v41e | driver called, `gpu=1` absent — booted 19:16, ring unread |
-| `alioth-ios16-0081-markers-v41f-ctl.img` | v41f | objects present, driver never called — must boot exactly like v40 |
-| `alioth-ios16-0081-markers-v41e-gpu.img` | v41e | `adreno_soc=a650 gpu=1` — steps 1-21 and the first real measurement |
-| `alioth-ios16-0081-markers-v40-dbg.img` | v40 | `cpus=8 ufslogsecs=1` — baseline for the instrumented cmdline |
-| `alioth-ios16-0081-markers-v41f-dbg.img` | v41f | same cmdline, objects in, driver never called |
-| `alioth-ios16-0081-markers-v41e-dbg.img` | v41e | same cmdline, driver called, `gpu=1` absent |
+`start_by_itself()` compares `pe_arm_get_soc_base_phys()` against
+`REDWOOD_SOC_BASE = 0x00400000`. That function
+(`pexpert/arm/pe_identify_machine.c:178`) reads `/arm-io`'s `ranges` and returns
+`*(ranges + 1)` — the second 64-bit word. This ADT's `ranges` is
+`u64(0, SOC_BASE, 0x100000000 - SOC_BASE)` with `SOC_BASE = 0x01000000`, so the
+second word is `0x01000000`, not `0x00400000`. The guard is comparing against
+the reference project's SoC base, not this tree's.
 
-Order: pull the 19:16 ring first. If it shows `adreno: SoC ...`, the control is
-clean and `v41e-gpu` can run. If it is untouched again, the next boot is
-`v41f-ctl` — with the objects in but never called — which separates "one of the
-five objects kills the kernel at constructor time" from "the call does".
-`v40-dbg` is the sanity check on the instrumented cmdline and should be run
-before any of the `-dbg` images is trusted.
+That is a one-constant mismatch, not a hardware result. Nothing has yet read a
+GPU register on this phone.
 
-## The cmdline has to change before any of this can be read
+## Every image since 18:00 was built on a broken ADT
+
+The five GPU objects were never the reason those boots stopped at `AL38a
+mbWaitCpus`. The ADT was.
+
+Every builder in `diag-markers-v41` takes its ADT from the pinned source image
+`alioth-ios16-diag.img`, whose ADT is `ff9cc8281ccb…`. The image that reached iOS
+at 16:37 — `v40b-sample600` — carries a different ADT, `f819e0ff65fe…`. Both are
+12800 bytes and differ in **exactly one byte, at offset 8800**: `0x1b` (27)
+versus `0x13` (19). That byte is the length of the `reg` property of the GIC node
+(`name = gic`, `compatible = arm,gic-v3`, `interrupt-controller`,
+`virtual-timer-intid`). 27 bytes is three base/size pairs; 19 is two and a half.
+
+| ADT | sha256 | GIC `reg` | used by |
+|:--|:--|:--|:--|
+| working | `f819e0ff65fe20a5…` | 0x1b | v22 … v40b-sample600 |
+| broken | `ff9cc8281ccb5892…` | 0x13 | v1 … v21, and every v40-ctl120 / -dbg / v41d / v41e / v41f image |
+
+The good ADT is on disk: `diag-markers-v41/adt-alioth-vtimer27.adt`, byte-identical
+in every `diag-markers-v22` … `v40` directory. The builders already accept it:
+
+```
+--adt diag-markers-v41/adt-alioth-vtimer27.adt \
+--adt-sha256 f819e0ff65fe20a5e61c0f5afd3bfb299f4c784d881a038b9606240cc6a73a03
+```
+
+The truncated GIC range plausibly breaks `SweetCPU::startAll`'s SGI path, which is
+what must reach `ml_set_max_cpus()` before `mbinit`'s `ml_wait_max_cpus()` returns —
+the exact spin the screen was showing.
+
+Rebuilt with the good ADT, `v40-ctl120-adt` booted into iOS at 21:19 (`cpus=1`,
+SpringBoard and backboardd running, `120 s elapsed, resetting`). That is the first
+boot past `AL38a` since 16:37, and it settles the SMP question: **`cpus=1` was never
+the problem.** The earlier `cpus=8` failures were the same bad ADT, not SMP.
+
+## What the ring can and cannot show
 
 The ring is written by `sweet_log_thread`, started by `sweet_log_start()` at
-`sweet_ufs.c:667` with `sweet_log_secs` from `ufslogsecs` (default 10). The
-17:37 boot left the ring exactly as the previous run had it, so that boot died
-inside its first 10 s — and `sweet_autoreset_start()` sits two lines later, so
-a death in the driver leaves no reset armed: the cmdline has `cpus=1`, and a
-wedged single CPU runs neither the reset timer nor the flush timer.
+`sweet_ufs.c:667` with `sweet_log_secs` from `ufslogsecs` (default 10). A boot
+that dies before that line writes nothing at all. With `ufslogsecs=1` the ring
+is at most a second behind wherever the kernel stops.
 
-So the diagnostic images carry `cpus=8 ufslogsecs=1`: eight cores so a wedged
-one does not stop the flush, one-second flushes so the ring is at most a
-second behind wherever the kernel stops.
+That is what the four ADT boots show: each wrote a full iOS run, so each reached
+`sweet_ufs_init()`. The 17:37 and 19:16 boots wrote nothing, so they died before
+it — and the reason was the ADT, not the GPU.
 
-| image | kernel | cmdline |
-|:--|:--|:--|
-| `alioth-ios16-0081-markers-v40-dbg.img` | v40 | `cpus=8 ufslogsecs=1` — the baseline, must boot and return |
-| `alioth-ios16-0081-markers-v41f-dbg.img` | v41f | same, objects in, driver never called |
-| `alioth-ios16-0081-markers-v41e-dbg.img` | v41e | same, driver called, `gpu=1` absent |
+The `-dbg` images (`cpus=8 ufslogsecs=1`) were built before the ADT was found
+and still carry the broken one. They need rebuilding with `--adt` before they
+mean anything. `cpus=8` itself is no longer suspect: `cpus=1` boots fine, and
+the earlier `cpus=8` failures were the same ADT.
 
-Run them in that order. `v40-dbg` first: if the known-good kernel does not
-come back under `cpus=8`, the SMP path is itself the variable and nothing else
-in this table means anything.
+## The next variable
+
+`REDWOOD_SOC_BASE` in `redwood_adreno.c:4649` is `0x00400000`; this tree's ADT
+puts the SoC at `0x01000000` (`make-alioth-ios-adt.py:31`). One of the two is
+wrong for this phone, and the guard is what stands between `gpu=1` and the
+register sequence. Deciding which means reading `/arm-io` `ranges` out of
+20H392's own device tree and comparing — not guessing.
+
+Until that is settled, steps 1-21 have never run on this phone.
+
