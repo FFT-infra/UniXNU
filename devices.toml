@@ -2362,5 +2362,5 @@ format = 1
 legacy_page = "preserve"
 soc = "SM8250"
 summary = "UFS root, launchd and a published GOP display; no frame submitted yet"
-revision = "0000000000000000000000000000000000000000"
+revision = "36182bc0d7551a4b7b54f6411c341c6ff74bfee9"
 board = "alioth"
