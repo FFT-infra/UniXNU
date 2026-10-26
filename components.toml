@@ -510,3 +510,25 @@ runtime_identifiers = ["ShengPreflight"]
 build_stage = "firmware"
 build = []
 outputs = []
+
+[[component]]
+id = "QcomXnuUsbDebug"
+kind = "driver"
+function = "CDC-ACM debug console over the DWC3 controller"
+scope = "debug"
+repository = "https://github.com/FFT-infra/QcomXnuUsbDebug.git"
+revision = "46e9a96b98c883eabb1528e546e22f1cc92a01f9"
+path = "drivers/QcomXnuUsbDebug"
+hardware = ["Qualcomm DWC3", "SM8250"]
+os_abi = ["ipados-17.7.11-21H461"]
+board_dependencies = ["firmware USB bring-up"]
+verified_devices = []
+dependencies = []
+source_files = ["kernel/QcomXnuUsbDebug.c", "kernel/QcomUsbScreenshot.c", "usb/Dwc3.c", "soc/QcomUsbQualify.c", "soc/QcomUsbDmaDomain.c"]
+runtime_identifiers = ["QcomXnuUsbDebug", "qcom_usb_debug_init", "qcom-usb-debug", "QCOM USB WORKER"]
+build_stage = "kernel"
+build = ["{component}/scripts/build.py",
+  "--compile-record", "{tree}/build/xnu/ios-obj/DEVELOPMENT_ARM64_BCM2837/pexpert/DEVELOPMENT/pe_kprintf.o.json",
+  "--soc", "soc/Sm8250.h",
+  "--output", "{tree}/.cache/qcom-usb-debug", "--replace"]
+outputs = ["{tree}/.cache/qcom-usb-debug/libQcomXnuUsbDebug.a"]

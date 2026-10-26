@@ -185,7 +185,11 @@ def build(ctx, modules):
         # kern_exec.o among them, and the archive builders then read a link.filelist that names files that no longer
         # exist. The same bootstrap pass rebuilds them before those builders run.
         log('kernel: bootstrap pass for the compile records')
-        subprocess_env = {**env, 'XNU_BOOT_PROGRESS': '0', 'XNU_BOOTSTRAP': '1'}
+        # XNU_BOOT_PROGRESS and XNU_QCOM_USB_DEBUG both gate code that links an archive the
+        # bootstrap pass deliberately leaves out, so both are off for it. Their stamps then make
+        # the real pass rebuild the objects they cover.
+        subprocess_env = {**env, 'XNU_BOOT_PROGRESS': '0', 'XNU_QCOM_USB_DEBUG': '0',
+                          'XNU_BOOTSTRAP': '1'}
         try:
             run(['bash', script], cwd=ctx.tree, env=subprocess_env, log_file=ctx.logs / 'kernel-bootstrap.log')
         except Error:

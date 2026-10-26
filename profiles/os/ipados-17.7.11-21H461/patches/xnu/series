@@ -15,5 +15,12 @@ arch:../../../patches/xnu/offline-exec-count.patch
 # dead daemon leaves no other trace, and a 2026-10-26 measurement found processes being created
 # and then vanishing. It edits proc_exit in kern_exit.c, which no earlier patch touches.
 arch:../../../patches/xnu/offline-exit-hook.patch
+# The USB debug console tees printf, IOLog, kprintf and the panic drain onto a CDC-ACM port.
+# It must come after zzz-boot-progress.patch above: that patch hands PE_kputc to
+# boot_progress_putc and returns, so the USB init has to run before that branch or the port
+# would silently capture nothing. The port's own test model checks every console byte reaches
+# USB exactly once in all three PE_kputc states.
+component:QcomXnuUsbDebug/patches/darwin23/0001-qcom-usb-debug-console.patch
+component:QcomXnuUsbDebug/patches/darwin23/0002-qcom-usb-debug-worker.patch
 component:XnuPrelink/patches/xnu-10063.141.1-security-init.patch
 component:XnuPrelink/patches/xnu-10063.141.1-sparse-index.patch
