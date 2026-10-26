@@ -64,6 +64,7 @@ if args.negative_aes_kat:
 destination = out / (component + '.o')
 arguments = record['arguments']
 command = []
+suppressions = []
 index = 0
 while index < len(arguments):
     value = arguments[index]
@@ -74,12 +75,20 @@ while index < len(arguments):
         index += 1
     elif value == '-Xclang' and arguments[index + 1].startswith('-W'):
         index += 1
+    elif value.startswith('-Wno-'):
+        # This script sets its own -Werror strictness and drops the record's warning switches so a
+        # driver is held to it. A suppression is not strictness, though: XNU's own headers are
+        # written against the record's -Wno- set, and -Wextra turns some of those diagnostics on.
+        # Dropping them fails the build inside kalloc.h, vm_kern.h and IOLib.h, on code this
+        # script does not own. Keep them, and append them after the flags below so they win.
+        suppressions.append(value)
     elif not value.startswith('-W'):
         command.append(value)
     index += 1
 command.extend(['-Wall', '-Wextra', '-Werror', '-Wno-unused-parameter',
                 '-Wno-c99-designator', '-Wno-reorder-init-list', '-Wno-deprecated-enum-enum-conversion',
                 '-Wno-unnecessary-virtual-specifier', '-I', str(ROOT / '.cache/xnu-work/osfmk')])
+command.extend(suppressions)
 if component in ('NativeVirtioBlock', 'NativeRamBlock', 'NativeUfs'):
     command += ['-I', str(ROOT / 'build/storage-abi/include')]
     if args.verified_root:

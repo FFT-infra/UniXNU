@@ -486,7 +486,16 @@ if [ "$(cat "$NATIVE_AIR_STAMP" 2>/dev/null || echo 0)" != "$NATIVE_AIR_INIT" ];
   rm -f "$ROOT/build/xnu/ios-obj/DEVELOPMENT_ARM64_BCM2837/bsd/DEVELOPMENT/kern_exec.o"
   printf '%s\n' "$NATIVE_AIR_INIT" > "$NATIVE_AIR_STAMP"
 fi
-EXTRA_MAKE_ARGS+=("kern_exec.o_CFLAGS_ADD=-DXNU_NATIVE_AIR_INIT=$NATIVE_AIR_INIT -DXNU_OWNER_CACHE_MOUNT=$OWNER_CACHE_MOUNT -DXNU_OWNER_CACHE_STARTUP=$OWNER_CACHE_STARTUP -DXNU_OWNER_BOOT_MANIFEST=$OWNER_BOOT_MANIFEST -DXNU_OWNER_DATA_MOUNT=$OWNER_DATA_MOUNT -DXNU_NATIVE_RAM_BLOCK=$NATIVE_RAM_BLOCK -DXNU_OWNER_CRYPTEX_FILES=$OWNER_CRYPTEX_FILES -DXNU_OWNER_UNION_SYSTEMOS=$OWNER_UNION_SYSTEMOS -include $OWNER_DATA_HEADER")
+EXTRA_MAKE_ARGS+=("kern_exec.o_CFLAGS_ADD=-DXNU_NATIVE_AIR_INIT=$NATIVE_AIR_INIT -DXNU_OWNER_CACHE_MOUNT=$OWNER_CACHE_MOUNT -DXNU_OWNER_CACHE_STARTUP=$OWNER_CACHE_STARTUP -DXNU_OWNER_BOOT_MANIFEST=$OWNER_BOOT_MANIFEST -DXNU_OWNER_DATA_MOUNT=$OWNER_DATA_MOUNT -DXNU_NATIVE_RAM_BLOCK=$NATIVE_RAM_BLOCK -DXNU_OWNER_CRYPTEX_FILES=$OWNER_CRYPTEX_FILES -DXNU_OWNER_UNION_SYSTEMOS=$OWNER_UNION_SYSTEMOS -DXNU_BOOT_PROGRESS=$BOOT_PROGRESS -include $OWNER_DATA_HEADER")
+# XNU_BOOT_PROGRESS also has to reach kern_exec.o, not only the global EXTRA_CFLAGS. The
+# watchdog-policy call in load_init_program is inside `#if XNU_BOOT_PROGRESS`, so with the flag
+# only global that block compiled out and sheng-lite/sheng-disable-watchdogd stayed dead keys
+# even with the option on. The stamp forces the object to rebuild when the value changes.
+BOOT_PROGRESS_STAMP=$ROOT/build/xnu/ios-obj/DEVELOPMENT_ARM64_BCM2837/.boot-progress-mode
+if [ "$(cat "$BOOT_PROGRESS_STAMP" 2>/dev/null || echo -)" != "$BOOT_PROGRESS" ]; then
+  rm -f "$ROOT/build/xnu/ios-obj/DEVELOPMENT_ARM64_BCM2837/bsd/DEVELOPMENT/kern_exec.o"
+  printf '%s\n' "$BOOT_PROGRESS" > "$BOOT_PROGRESS_STAMP"
+fi
 OWNER_CACHE_STAMP=$ROOT/build/xnu/ios-obj/DEVELOPMENT_ARM64_BCM2837/.owner-cache-mount-mode
 if [ "$(cat "$OWNER_CACHE_STAMP" 2>/dev/null || echo 0:0)" != "$OWNER_CACHE_MOUNT:$OWNER_CACHE_STARTUP" ]; then
   rm -f "$ROOT/build/xnu/ios-obj/DEVELOPMENT_ARM64_BCM2837/bsd/DEVELOPMENT/kern_exec.o"
@@ -705,8 +714,9 @@ import sys
 import hashlib
 records = [json.loads(Path(p).with_name('bindings.json').read_text()) for p in sys.argv[1:]]
 for archive, record in zip(sys.argv[1:], records):
-    path = Path(archive)
-    obj = path.with_name(path.stem.removeprefix('lib') + '.o')
+    # The object name is the component's, not the archive's: libVirtioMmioBlock.a holds
+    # NativeVirtioBlock.o and libRamBlock.a holds NativeRamBlock.o. bindings.json records it.
+    obj = Path(archive).with_name(record['component'] + '.o')
     if hashlib.sha256(obj.read_bytes()).hexdigest() != record['compiled_object_sha256']:
         raise SystemExit('Re-audit the actual compiled storage object before linking')
 first, second = [record['bindings'] for record in records]

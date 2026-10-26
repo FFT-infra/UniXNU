@@ -4,5 +4,16 @@
 # #if XNU_SHENG_PMGR and is inert on boards that leave the flag off.
 arch:../../../patches/xnu/sheng-platform-power.patch
 arch:../../../patches/xnu/zzz-boot-progress.patch
+# offline-userspace-ladder.patch adds its band 5 marker to the same opening lines of
+# load_init_program() that zzz-boot-progress.patch above already touches, so it must come after
+# it. It also edits load_init_program_at_path() and bsd_ast(), which no earlier patch touches.
+arch:../../../patches/xnu/offline-userspace-ladder.patch
+# offline-exec-count.patch touches the success branch of __mac_execve, which no earlier patch
+# edits. It counts userspace execs for bands 10 to 13.
+arch:../../../patches/xnu/offline-exec-count.patch
+# offline-exit-hook.patch reports process exits on the panel. panic_on_crash_disabled=1 means a
+# dead daemon leaves no other trace, and a 2026-10-26 measurement found processes being created
+# and then vanishing. It edits proc_exit in kern_exit.c, which no earlier patch touches.
+arch:../../../patches/xnu/offline-exit-hook.patch
 component:XnuPrelink/patches/xnu-10063.141.1-security-init.patch
 component:XnuPrelink/patches/xnu-10063.141.1-sparse-index.patch

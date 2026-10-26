@@ -145,6 +145,14 @@ def build_archives(ctx, env):
             raise Error(f'{key}: {value} not found; supply the archive or its build recipe')
 
 
+def missing_objects(tree):
+    """Objects named by the last link but absent now, which an incremental pass has to rebuild first."""
+    filelist = tree / 'build/xnu/ios-obj/DEVELOPMENT_ARM64_BCM2837/link.filelist'
+    if not filelist.is_file():
+        return []
+    return [name for name in filelist.read_text().splitlines() if name.strip() and not Path(name.strip()).is_file()]
+
+
 def build(ctx, modules):
     log('kernel: XNU')
     script = ctx.tree / 'scripts/build-xnu-4k-baseline.sh'
@@ -168,17 +176,20 @@ def build(ctx, modules):
         env['UNIXNU_GENERATED_DIR'] = str(generated)
     env['JOBS'] = str(ctx.jobs)
     record = ctx.tree / 'build/xnu/ios-obj/DEVELOPMENT_ARM64_BCM2837/osfmk/DEVELOPMENT/startup.o.json'
-    if not record.is_file():
+    if not record.is_file() or missing_objects(ctx.tree):
         # The archive builders and the boot progress layer read compile records of the XNU build, which only an earlier
         # pass leaves behind. A first build from scratch therefore runs one pass without them; XNU_BOOTSTRAP makes it
         # skip the archive checks and link without the archives, so it stops at the link and only the records are
         # required of it.
+        # A pass that changes an owner-mode stamp (build-xnu-4k-baseline.sh:373-500) deletes the objects it invalidates,
+        # kern_exec.o among them, and the archive builders then read a link.filelist that names files that no longer
+        # exist. The same bootstrap pass rebuilds them before those builders run.
         log('kernel: bootstrap pass for the compile records')
         subprocess_env = {**env, 'XNU_BOOT_PROGRESS': '0', 'XNU_BOOTSTRAP': '1'}
         try:
             run(['bash', script], cwd=ctx.tree, env=subprocess_env, log_file=ctx.logs / 'kernel-bootstrap.log')
         except Error:
-            if not record.is_file():
+            if not record.is_file() or missing_objects(ctx.tree):
                 raise
     storage = ctx.tree / 'build/storage-abi/include/IOKit/storage'
     if (ctx.tree / 'refer/IOStorageFamily').is_dir() and not storage.is_dir():

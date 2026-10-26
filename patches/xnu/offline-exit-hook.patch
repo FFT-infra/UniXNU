@@ -1,0 +1,25 @@
+diff --git a/bsd/kern/kern_exit.c b/bsd/kern/kern_exit.c
+index 760c339..35dfbe3 100644
+--- a/bsd/kern/kern_exit.c
++++ b/bsd/kern/kern_exit.c
+@@ -2162,6 +2162,20 @@ proc_exit(proc_t p)
+ 
+ 	uth = current_uthread();
+ 
++	/* Report the exit on the panel before anything is torn down, while p is still valid and no
++	 * lock is held. panic_on_crash_disabled=1 is set, so a daemon that dies leaves no other trace:
++	 * this is the only channel that can say early exits are happening at all.
++	 * The signal number is not available here (rv is computed further down), so the caller passes
++	 * 0 and the abnormal test rests on the exit-reason namespace instead. */
++	extern void native_legacy_note_exit(uint32_t, const char *, int, uint32_t, int);
++	{
++		int offline_ns = (p->p_exit_reason != OS_REASON_NULL)
++		    ? (int)p->p_exit_reason->osr_namespace : -1;
++		uint32_t offline_code = (p->p_exit_reason != OS_REASON_NULL)
++		    ? p->p_exit_reason->osr_code : 0;
++		native_legacy_note_exit((uint32_t)p->p_pid, p->p_name, offline_ns, offline_code, 0);
++	}
++
+ 	proc_lock(p);
+ 	proc_transstart(p, 1, 0);
+ 	if (!(p->p_lflag & P_LEXIT)) {
