@@ -302,7 +302,7 @@
 +void boot_progress_user_abort(void *, unsigned, uint64_t);
 +void boot_progress_critical_exit(int, char *, unsigned long);
 +void boot_progress_process_stage(int, const char *, const char *);
-+void boot_progress_exit(int, const char *, int, unsigned, uint64_t);
++void boot_progress_exit(int, const char *, int, unsigned, uint64_t, const char *);
 +#else
 +#define boot_progress_init() ((void)0)
 +#define boot_progress_start() ((void)0)
@@ -350,13 +350,21 @@
 +		boot_progress_critical_exit(proc_getpid(p), prefix_str_buf, sizeof(prefix_str_buf));
  		prefix_str = prefix_str_buf;
  	}
-@@ -1893,6 +1899,10 @@
+@@ -1893,6 +1899,18 @@
  	task_t task = proc_task(p);
  
  
++	/* The namespace and code alone cannot say why libsystem faulted: every
++	 * OS_REASON_LIBSYSTEM_CODE_FAULT is ns=18 code=2, and the message that names the
++	 * actual check ("FD_SET overflow" and the like) lives only in the reason's kcdata
++	 * payload. Measured 2026-10-27: cryptexd aborted 21 times with ns=18 code=2 and the
++	 * payload was never read, so every one of those crashes looked identical.
++	 * exit_reason_get_string_desc is defined in this same file and returns NULL when
++	 * there is no text, which is the ordinary case for a plain signal death. */
 +	boot_progress_exit(proc_getpid(p),p->p_name,rv,
 +	    p->p_exit_reason ? p->p_exit_reason->osr_namespace : 0,
-+	    p->p_exit_reason ? p->p_exit_reason->osr_code : 0);
++	    p->p_exit_reason ? p->p_exit_reason->osr_code : 0,
++	    p->p_exit_reason ? exit_reason_get_string_desc(p->p_exit_reason) : (char *)0);
 +
  	if (p->p_crash_behavior != 0 || p == initproc) {
  		proc_handle_critical_exit(p, rv);

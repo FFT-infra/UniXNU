@@ -1,0 +1,16 @@
+--- a/bsd/vfs/vfs_syscalls.c
++++ b/bsd/vfs/vfs_syscalls.c
+@@ -9846,6 +9846,13 @@
+ #endif
+ 
+ out:
++	/* ENOSPC here means the destination filesystem reported no space, and the name is the
++	 * only way to tell which mount that was: the Data volume had 31 MiB free when
++	 * cryptexd aborted with this error, so the write was landing somewhere else.
++	 * nd.ni_cnd.cn_pnbuf holds the resolved path once nameiat succeeded. */
++	if (error == ENOSPC && nd.ni_cnd.cn_pnbuf != NULL) {
++		printf("mkdir-enospc: %s\n", nd.ni_cnd.cn_pnbuf);
++	}
+ 	/*
+ 	 * nameidone has to happen before we vnode_put(dvp)
+ 	 * since it may need to release the fs_nodelock on the dvp
