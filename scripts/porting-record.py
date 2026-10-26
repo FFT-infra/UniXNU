@@ -201,7 +201,8 @@ def site(overrides):
     for entry in registry['device']:
         name, repo, revision = entry['name'], entry['repository'], entry['revision']
         need(re.fullmatch(r'[a-z0-9-]+', name), 'invalid device name')
-        need(re.fullmatch(r'UniXNU/[A-Za-z0-9_-]+', repo), f'{name}: official repository required')
+        need(re.fullmatch(r'(?:UniXNU|FFT-infra)/[A-Za-z0-9_-]+', repo),
+             f'{name}: official or FFT-infra repository required')
         need(re.fullmatch(r'[0-9a-f]{40}', revision), f'{name}: pin a full commit')
         if name in local:
             path = Path(local[name])

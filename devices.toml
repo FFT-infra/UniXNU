@@ -2352,3 +2352,15 @@ summary = "Read-only UFS APFS root; user mapping stops at MEND"
 repository_id = 1432118290
 revision = "7da81e0af232fcc8163ca6cb1a6032685c988cac"
 board = "zorn"
+
+[[device]]
+name = "alioth"
+repository = "FFT-infra/UniXNU-alioth"
+title = "Redmi K40 (alioth)"
+title_zh = "红米 K40（alioth）"
+format = 1
+legacy_page = "preserve"
+soc = "SM8250"
+summary = "UFS root, launchd and a published GOP display; no frame submitted yet"
+revision = "0000000000000000000000000000000000000000"
+board = "alioth"
