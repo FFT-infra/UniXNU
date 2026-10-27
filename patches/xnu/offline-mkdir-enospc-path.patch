@@ -1,15 +1,30 @@
 --- a/bsd/vfs/vfs_syscalls.c
 +++ b/bsd/vfs/vfs_syscalls.c
-@@ -9846,6 +9846,13 @@
+@@ -9846,6 +9846,28 @@
  #endif
  
  out:
 +	/* ENOSPC here means the destination filesystem reported no space, and the name is the
-+	 * only way to tell which mount that was: the Data volume had 31 MiB free when
-+	 * cryptexd aborted with this error, so the write was landing somewhere else.
-+	 * nd.ni_cnd.cn_pnbuf holds the resolved path once nameiat succeeded. */
++	 * only way to tell which mount that was: the Data volume had 31 MiB free when cryptexd
++	 * aborted with this error, so the write was landing somewhere else.
++	 * nd.ni_cnd.cn_pnbuf holds the resolved path once nameiat succeeded.
++	 * Not printf: it takes the console lock, which deadlocked the boot here. */
 +	if (error == ENOSPC && nd.ni_cnd.cn_pnbuf != NULL) {
-+		printf("mkdir-enospc: %s\n", nd.ni_cnd.cn_pnbuf);
++		/* enqueue, not write: write() also polls the controller once the phase is
++		 * ACTIVE and can spin for a millisecond, and this runs under the name cache and
++		 * vnode locks, where that stalls every path lookup on the machine. enqueue only
++		 * appends to the CPU backlog. */
++		extern size_t qcom_usb_debug_enqueue(const void *, size_t)
++		    __attribute__((weak_import));
++		if (&qcom_usb_debug_enqueue) {
++			char mkdir_note[256];
++			int mkdir_n = snprintf(mkdir_note, sizeof(mkdir_note), "mkdir-enospc: %s\n",
++			    nd.ni_cnd.cn_pnbuf);
++			if (mkdir_n > 0)
++				qcom_usb_debug_enqueue(mkdir_note,
++				    (size_t)mkdir_n < sizeof(mkdir_note) ? (size_t)mkdir_n
++				    : sizeof(mkdir_note) - 1);
++		}
 +	}
  	/*
  	 * nameidone has to happen before we vnode_put(dvp)
