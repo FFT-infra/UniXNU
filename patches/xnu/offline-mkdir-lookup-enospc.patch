@@ -1,0 +1,21 @@
+--- a/bsd/vfs/vfs_syscalls.c
++++ b/bsd/vfs/vfs_syscalls.c
+@@ -9766,3 +9766,18 @@
+ 	error = nameiat(&nd, fd);
+ 	if (error) {
++		/* The path never resolved, so cn_pnbuf is not usable here. Report the error and
++		 * the caller: when ENOSPC comes from path resolution rather than from the
++		 * filesystem's create, the out: probe never runs. */
++		if (error == ENOSPC) {
++			extern size_t qcom_usb_debug_enqueue(const void *, size_t)
++			    __attribute__((weak_import));
++			if (&qcom_usb_debug_enqueue) {
++				char look_note[96];
++				int look_n = snprintf(look_note, sizeof(look_note),
++				    "mkdir-lookup-enospc: pid=%d", proc_getpid(vfs_context_proc(ctx)));
++				if (look_n > 0)
++					qcom_usb_debug_enqueue(look_note, (size_t)look_n < sizeof(look_note)
++					    ? (size_t)look_n : sizeof(look_note) - 1);
++			}
++		}
+ 		return error;
