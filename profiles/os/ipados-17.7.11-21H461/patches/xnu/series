@@ -20,11 +20,6 @@ arch:../../../patches/xnu/offline-exit-hook.patch
 # volume still reported 31 MiB free, so the error names a different mount than the one the
 # name suggests. It edits mkdir1at's out label in vfs_syscalls.c, which no earlier patch touches.
 arch:../../../patches/xnu/offline-mkdir-enospc-path.patch
-# offline-mkdir-lookup-enospc.patch covers the other half of the same question: when the
-# path never resolves, mkdir1at returns before the out: probe runs, so an ENOSPC from name
-# resolution would be invisible. It reports the caller instead of the name, because the name
-# is not available yet.
-arch:../../../patches/xnu/offline-mkdir-lookup-enospc.patch
 # The USB debug console tees printf, IOLog, kprintf and the panic drain onto a CDC-ACM port.
 # It must come after zzz-boot-progress.patch above: that patch hands PE_kputc to
 # boot_progress_putc and returns, so the USB init has to run before that branch or the port
