@@ -1,6 +1,6 @@
 --- a/bsd/vfs/vfs_syscalls.c
 +++ b/bsd/vfs/vfs_syscalls.c
-@@ -9846,6 +9846,28 @@
+@@ -9846,6 +9846,32 @@
  #endif
  
  out:
@@ -9,7 +9,11 @@
 +	 * aborted with this error, so the write was landing somewhere else.
 +	 * nd.ni_cnd.cn_pnbuf holds the resolved path once nameiat succeeded.
 +	 * Not printf: it takes the console lock, which deadlocked the boot here. */
-+	if (error == ENOSPC && nd.ni_cnd.cn_pnbuf != NULL) {
++	/* Any failure that is not the ordinary "that name is already taken" case, and not
++	 * ENOENT, which every component probes for on purpose. Measured 2026-10-27: the first
++	 * version caught only ENOSPC, so a different errno would have been silent and the
++	 * investigation would have lost its only lead. */
++	if (error != 0 && error != EEXIST && error != ENOENT && nd.ni_cnd.cn_pnbuf != NULL) {
 +		/* enqueue, not write: write() also polls the controller once the phase is
 +		 * ACTIVE and can spin for a millisecond, and this runs under the name cache and
 +		 * vnode locks, where that stalls every path lookup on the machine. enqueue only
@@ -18,8 +22,8 @@
 +		    __attribute__((weak_import));
 +		if (&qcom_usb_debug_enqueue) {
 +			char mkdir_note[256];
-+			int mkdir_n = snprintf(mkdir_note, sizeof(mkdir_note), "mkdir-enospc: %s\n",
-+			    nd.ni_cnd.cn_pnbuf);
++			int mkdir_n = snprintf(mkdir_note, sizeof(mkdir_note),
++			    "mkdir-err=%d: %s\n", error, nd.ni_cnd.cn_pnbuf);
 +			if (mkdir_n > 0)
 +				qcom_usb_debug_enqueue(mkdir_note,
 +				    (size_t)mkdir_n < sizeof(mkdir_note) ? (size_t)mkdir_n
