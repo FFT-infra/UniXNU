@@ -15,11 +15,6 @@ arch:../../../patches/xnu/offline-exec-count.patch
 # dead daemon leaves no other trace, and a 2026-10-26 measurement found processes being created
 # and then vanishing. It edits proc_exit in kern_exit.c, which no earlier patch touches.
 arch:../../../patches/xnu/offline-exit-hook.patch
-# offline-mkdir-enospc-path.patch prints the path when mkdir reports no space. Measured
-# 2026-10-27: cryptexd aborted with "mkdirat: [28: No space left on device]" while the Data
-# volume still reported 31 MiB free, so the error names a different mount than the one the
-# name suggests. It edits mkdir1at's out label in vfs_syscalls.c, which no earlier patch touches.
-arch:../../../patches/xnu/offline-mkdir-enospc-path.patch
 # The USB debug console tees printf, IOLog, kprintf and the panic drain onto a CDC-ACM port.
 # It must come after zzz-boot-progress.patch above: that patch hands PE_kputc to
 # boot_progress_putc and returns, so the USB init has to run before that branch or the port
