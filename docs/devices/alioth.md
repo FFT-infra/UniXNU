@@ -6,7 +6,7 @@
 
 UFS root, launchd, touch and a published GPU device with the staged Metal accelerator; the desktop does not draw yet and there is no Wi-Fi.
 
-Source record: [porting.toml](https://github.com/FFT-infra/UniXNU-alioth/blob/3f40b1d80dfa3246869714ae2a3167216610b421/porting.toml), `3f40b1d80dfa3246869714ae2a3167216610b421`.
+Source record: [porting.toml](https://github.com/FFT-infra/UniXNU-alioth/blob/5c108223264469dbe83d2e85858539d66fea2a44/porting.toml), `5c108223264469dbe83d2e85858539d66fea2a44`.
 
 This page is generated from the device record.
 
@@ -137,7 +137,7 @@ Collect evidence using the next action.
 
 ### Evidence
 
-- `source`: [Refuses a device tree that declares cluster-type without the cluster patch applied and MAX\_CPU\_CLUSTERS &gt;= 2, the combination that killed three boots silently.](https://github.com/FFT-infra/UniXNU-alioth/blob/3f40b1d80dfa3246869714ae2a3167216610b421/scripts/check-smp-topology.py)
+- `source`: [Refuses a device tree that declares cluster-type without the cluster patch applied and MAX\_CPU\_CLUSTERS &gt;= 2, the combination that killed three boots silently.](https://github.com/FFT-infra/UniXNU-alioth/blob/5c108223264469dbe83d2e85858539d66fea2a44/scripts/check-smp-topology.py)
 
 ## Memory and DMA {#memory}
 
@@ -219,7 +219,7 @@ Components: `ShengUfs`, `VerifiedRoot`, `VirtioMmioBlock`, `RamBlock`.
 
 ### Evidence
 
-- `device`: [The kernel reports cryptexd aborting with mkdirat ENOSPC while the Data volume reports 31 MiB free, which places the failing write on a mount other than /private/var.](https://github.com/FFT-infra/UniXNU-alioth/blob/3f40b1d80dfa3246869714ae2a3167216610b421/docs/evidence/2026-10-27-boot-diagnostics.md)
+- `device`: [The kernel reports cryptexd aborting with mkdirat ENOSPC while the Data volume reports 31 MiB free, which places the failing write on a mount other than /private/var.](https://github.com/FFT-infra/UniXNU-alioth/blob/5c108223264469dbe83d2e85858539d66fea2a44/docs/evidence/2026-10-27-boot-diagnostics.md)
   Command: <code>read /dev/tty.usbmodem&lt;N&gt; at 115200 8N1 and collect EXITLOG records</code>. Revision: `24d127c47217eb580dbe3f3a94c32ad25cbaae00`.
 
 ## Display {#display}
@@ -262,7 +262,7 @@ Components: `GopFramebuffer`.
 
 ### Evidence
 
-- `device`: [DISPLAY stage=10 with CLIENT calls=4 class=IOMobileFramebufferUserClient, and SWAP calls=0: a client connects but no frame is submitted.](https://github.com/FFT-infra/UniXNU-alioth/blob/3f40b1d80dfa3246869714ae2a3167216610b421/docs/evidence/2026-10-27-boot-diagnostics.md)
+- `device`: [DISPLAY stage=10 with CLIENT calls=4 class=IOMobileFramebufferUserClient, and SWAP calls=0: a client connects but no frame is submitted.](https://github.com/FFT-infra/UniXNU-alioth/blob/5c108223264469dbe83d2e85858539d66fea2a44/docs/evidence/2026-10-27-boot-diagnostics.md)
   Command: <code>read the diagnostic page and the USB console after booting the image</code>. Revision: `24d127c47217eb580dbe3f3a94c32ad25cbaae00`.
 
 ## Input {#input}
@@ -306,7 +306,7 @@ Components: `QcomGeniSpi`, `ShengHidInput`, `ShengNovatekTouch`.
 
 ### Evidence
 
-- `source`: [Frame parsing treats an all-0xFF payload as no data, decodes 15-bit coordinates with the low bits in the pressure byte, and records the CRC it compared so 'passed' is visible rather than inferred.](https://github.com/FFT-infra/UniXNU-alioth/blob/3f40b1d80dfa3246869714ae2a3167216610b421/kits/alioth-touch/FocalTouchProtocol.c)
+- `source`: [Frame parsing treats an all-0xFF payload as no data, decodes 15-bit coordinates with the low bits in the pressure byte, and records the CRC it compared so 'passed' is visible rather than inferred.](https://github.com/FFT-infra/UniXNU-alioth/blob/5c108223264469dbe83d2e85858539d66fea2a44/kits/alioth-touch/FocalTouchProtocol.c)
 
 ## GPU {#gpu}
 
@@ -361,8 +361,7 @@ Components: `Adreno650`.
 - The live row carries fence timeouts \(t2 at mode 11, t9 once clients come and go\) and the GPU context bank keeps reading FSR 0x400 with a changing FAR; submissions complete after the driver's stall recovery, so neither stops the path.
 - FSR 0x400 is not a fault under this SoC's own definition: the vendor kernel's arm-smmu-regs.h puts TF at bit 1, and its fault mask is 0xc00001fe \(bits 31, 30, 8, 7, 6, 5, 4, 3, 2, 1\). 0x400 \(bit 10\) is outside that mask, which is why the kit's own fault test never fired; bit 10 is either implementation-defined on this part or the readback is not the register it is believed to be. Recorded, not explained.
 - backboardd finds the accelerator and the plugin: GPUOPEN records it opening type 1 \(the IOAcceleratorES client\), 0x4147 and 0x4148 \(the plugin's types\) with the sandbox gate answering kIOReturnNotPermitted \(0xe00002e2\) and the grant still admitting it, GPUCCLI shows it in slot 0 with a peak GPU address of 650 MiB, and no open was refused.
-- The user-client table runs out: NativeAdrenoMaxClients is 4 \(slots 0..3, 4 is the sentinel\) and NativeAdrenoPublish.cpp:237 answers kIOReturnNoSpace when no slot is free. GPUMOUNT fail 1/e00002db slot 4 is exactly that, so it is connection slots, not the VA window \(0x20000000..0x80000000\) and not the BO pool \(128 of 768 MiB used\). backboardd takes slot 0, the other three go to the next processes, and a restart whose old connection has not been reaped asks for a fifth.
-- The open record's res field is io\_filter\_resolver's opinion and macf is mac\_iokit\_check\_open's, both taken before the driver decides; only type 0x4147 mounts a core, and refused counts outcomes. res NotPermitted with refused 0 therefore means the filter commented and the open was served anyway.
+- The user-client slots run out: GPUMOUNT fail 1/e00002db slot 4 count 2 is kIOReturnNoSpace with all four windows taken, once the render server, PosterBoard, iconservicesagent and WidgetRenderer each want a device.
 - The plugin can be carried in the GPU addon instead of the Data seed: make-gpu-addon.py packs the same files and the kernel writes them into the Data volume before its addon mount, so a plugin rebuild no longer needs an APFS remount. With the addon the plugin loads exactly as from the seed \(backboardd opens type 1, 0x4147 and 0x4148\) and backboardd does not always crash: three minutes without one crash in u208.
 - No counter on this board measures the panel yet. The GOP presenter \(native\_gop\_\*\) only exists on offline-legacy-phase=3 and this board runs phase 4, so its counters are zero by construction; native\_legacy\_surfaces\[1\] counts only surfaces the compositor offers to the legacy driver, and this window server draws into the mapped framebuffer instead, so it reads zero while the UI is visible. GPUFRAME reports both and will read zero until the right counter is chosen.
 - The live row's fb and sc fields are native\_adreno\_pool\_stats\[5\] and \[2\], buffer allocation counters, not scanout; an earlier reading of them as framebuffer and swap counts was wrong.
@@ -379,21 +378,21 @@ Components: `Adreno650`.
 
 ### Evidence
 
-- `device`: [Mode 1 reads and mode 6 powers the CX domain with the SMMU and GMU clocks running: gcc=ok cc=ok smmu=ok cx1 clocks1.](https://github.com/FFT-infra/UniXNU-alioth/blob/3f40b1d80dfa3246869714ae2a3167216610b421/docs/evidence/2026-10-28-gpu-wifi-bringup.md)
+- `device`: [Mode 1 reads and mode 6 powers the CX domain with the SMMU and GMU clocks running: gcc=ok cc=ok smmu=ok cx1 clocks1.](https://github.com/FFT-infra/UniXNU-alioth/blob/5c108223264469dbe83d2e85858539d66fea2a44/docs/evidence/2026-10-28-gpu-wifi-bringup.md)
   Command: <code>sh scripts/run-sheng-unattended.sh &lt;boot.img&gt; 180, then read GPUROW lines from the console capture of that run</code>. Revision: `002ccaa75267bcc70ea1ba97dfefea14c6f7211d`.
-- `device`: [Writes to SMR slot 5 \(0x8000007f\) and sCR0 \(0x0026040e\) both read back the pre-existing value while IDR0 reads 0x4c017e06 through the same window.](https://github.com/FFT-infra/UniXNU-alioth/blob/3f40b1d80dfa3246869714ae2a3167216610b421/docs/evidence/2026-10-28-gpu-wifi-bringup.md)
+- `device`: [Writes to SMR slot 5 \(0x8000007f\) and sCR0 \(0x0026040e\) both read back the pre-existing value while IDR0 reads 0x4c017e06 through the same window.](https://github.com/FFT-infra/UniXNU-alioth/blob/5c108223264469dbe83d2e85858539d66fea2a44/docs/evidence/2026-10-28-gpu-wifi-bringup.md)
   Command: <code>boot a pipa-gpu=7 image and read the GPUROW14 line from the console capture</code>. Revision: `e240b0e810988bf1012b2aa37bd3ae4fd6d84e67`.
-- `device`: [routes 2, phase 5 with 13 writes, rb 1, en 1; GMU firmware 16 blocks, version 20010008, cm3 1, HFI acked c6.](https://github.com/FFT-infra/UniXNU-alioth/blob/3f40b1d80dfa3246869714ae2a3167216610b421/docs/evidence/2026-10-29-gpu-smmu-slot.md)
+- `device`: [routes 2, phase 5 with 13 writes, rb 1, en 1; GMU firmware 16 blocks, version 20010008, cm3 1, HFI acked c6.](https://github.com/FFT-infra/UniXNU-alioth/blob/5c108223264469dbe83d2e85858539d66fea2a44/docs/evidence/2026-10-29-gpu-smmu-slot.md)
   Command: <code>boot a pipa-gpu=7 image built with the slot normalisation and read GPUROW13/14/15 from the console capture</code>. Revision: `7946cba83f32b768075a071a5d47bb0a2fd3eeb2`.
-- `device`: [GX on perf 7 vote 0 oob 2 gx 000000c0&gt;00000000 gdscr f8222800 rbbm 00000001 gbif halt 0/3 rbbm halt 0/0.](https://github.com/FFT-infra/UniXNU-alioth/blob/3f40b1d80dfa3246869714ae2a3167216610b421/docs/evidence/2026-10-29-gpu-gx-and-context.md)
+- `device`: [GX on perf 7 vote 0 oob 2 gx 000000c0&gt;00000000 gdscr f8222800 rbbm 00000001 gbif halt 0/3 rbbm halt 0/0.](https://github.com/FFT-infra/UniXNU-alioth/blob/5c108223264469dbe83d2e85858539d66fea2a44/docs/evidence/2026-10-29-gpu-gx-and-context.md)
   Command: <code>boot a pipa-gpu=8 image (usb191) and read GPUROW17 from the serial console capture</code>. Revision: `6642723982701653e2546fb4b83859bb3bf41a17`.
-- `device`: [GPUCTX step 7 status 0 routes 4; CP ok init 0 ring 0 fence 0/1 marker a6500c0d read back; rptr and wptr 0x1b, hwfault 0.](https://github.com/FFT-infra/UniXNU-alioth/blob/3f40b1d80dfa3246869714ae2a3167216610b421/docs/evidence/2026-10-29-gpu-gx-and-context.md)
+- `device`: [GPUCTX step 7 status 0 routes 4; CP ok init 0 ring 0 fence 0/1 marker a6500c0d read back; rptr and wptr 0x1b, hwfault 0.](https://github.com/FFT-infra/UniXNU-alioth/blob/5c108223264469dbe83d2e85858539d66fea2a44/docs/evidence/2026-10-29-gpu-gx-and-context.md)
   Command: <code>boot a pipa-gpu=9 image (usb192) and read GPUROW18/19/20 from the serial console capture</code>. Revision: `ce0c65a1cbe872e44da38cbe51812cdbc775f32a`.
-- `device`: [ZAP ok step 7 init 0/0 mem 0/0 auth 0/0 secure 0; IRQ attach 0 readback a002 count 1&gt;2 nop fence 1 seen 00100000 masked 0.](https://github.com/FFT-infra/UniXNU-alioth/blob/3f40b1d80dfa3246869714ae2a3167216610b421/docs/evidence/2026-10-29-gpu-gx-and-context.md)
+- `device`: [ZAP ok step 7 init 0/0 mem 0/0 auth 0/0 secure 0; IRQ attach 0 readback a002 count 1&gt;2 nop fence 1 seen 00100000 masked 0.](https://github.com/FFT-infra/UniXNU-alioth/blob/5c108223264469dbe83d2e85858539d66fea2a44/docs/evidence/2026-10-29-gpu-gx-and-context.md)
   Command: <code>boot a pipa-gpu=10 image with the re-laid zap image (usb194) and read GPUROW21/22 from the serial console capture</code>. Revision: `32cdcd97f19d21d8e684ca4670bf1c834d9e681d`.
-- `device`: [PUBLISH ok submit 0 timer 0 publish 0 \| uc 36/36 first 0 at 0 cpumap 0 \| rounds 4 4.](https://github.com/FFT-infra/UniXNU-alioth/blob/3f40b1d80dfa3246869714ae2a3167216610b421/docs/evidence/2026-10-29-gpu-gx-and-context.md)
+- `device`: [PUBLISH ok submit 0 timer 0 publish 0 \| uc 36/36 first 0 at 0 cpumap 0 \| rounds 4 4.](https://github.com/FFT-infra/UniXNU-alioth/blob/5c108223264469dbe83d2e85858539d66fea2a44/docs/evidence/2026-10-29-gpu-gx-and-context.md)
   Command: <code>boot a pipa-gpu=11 image (usb195) and read GPUROW23 from the serial console capture</code>. Revision: `1d954032604c986bd98de483447cb06ab8896cff`.
-- `device`: [METAL ok: accelerator registered \(IOGPUFamily loaded, class size 136\); LIVE moved from sub 2/2 uc 2/2 to sub 7/7 uc 4/4 with pool 128/128/768.](https://github.com/FFT-infra/UniXNU-alioth/blob/3f40b1d80dfa3246869714ae2a3167216610b421/docs/evidence/2026-10-29-gpu-gx-and-context.md)
+- `device`: [METAL ok: accelerator registered \(IOGPUFamily loaded, class size 136\); LIVE moved from sub 2/2 uc 2/2 to sub 7/7 uc 4/4 with pool 128/128/768.](https://github.com/FFT-infra/UniXNU-alioth/blob/5c108223264469dbe83d2e85858539d66fea2a44/docs/evidence/2026-10-29-gpu-gx-and-context.md)
   Command: <code>boot a pipa-gpu=12 image (usb199) carrying the staged Data seed and read GPUROW24/25 from the serial console capture</code>. Revision: `fe2e366add2343efa48f8fe0cb01ff99ffa598d6`.
 
 ## Network {#network}
@@ -439,11 +438,11 @@ Components: `Adreno650`.
 
 ### Evidence
 
-- `device`: [gcc pcie\_0\_gdscr reads 0x22f001, the value the ios-sweet series recorded for a fully collapsed controller.](https://github.com/FFT-infra/UniXNU-alioth/blob/3f40b1d80dfa3246869714ae2a3167216610b421/docs/evidence/2026-10-28-gpu-wifi-bringup.md)
+- `device`: [gcc pcie\_0\_gdscr reads 0x22f001, the value the ios-sweet series recorded for a fully collapsed controller.](https://github.com/FFT-infra/UniXNU-alioth/blob/5c108223264469dbe83d2e85858539d66fea2a44/docs/evidence/2026-10-28-gpu-wifi-bringup.md)
   Command: <code>boot a pcie=1 image and read the PCIE 1 lines from the console capture</code>. Revision: `dc3ab04aa4b05d38a1c372fa2ec257b3ae8547ce`.
-- `device`: [Writing 0x22f000 reads back 0xf822f000 within a millisecond: the controller has power.](https://github.com/FFT-infra/UniXNU-alioth/blob/3f40b1d80dfa3246869714ae2a3167216610b421/docs/evidence/2026-10-28-gpu-wifi-bringup.md)
+- `device`: [Writing 0x22f000 reads back 0xf822f000 within a millisecond: the controller has power.](https://github.com/FFT-infra/UniXNU-alioth/blob/5c108223264469dbe83d2e85858539d66fea2a44/docs/evidence/2026-10-28-gpu-wifi-bringup.md)
   Command: <code>boot a pcie=2 image and read the PCIE 2 lines from the console capture</code>. Revision: `28be364f4dc9223a006770635dbc0f352d230401`.
-- `device`: [With pcie\_skip=32 the PARF setup completes and parf\_mhi\_clock\_reset\_ctrl 0x3 becomes 0x13, matching the reference.](https://github.com/FFT-infra/UniXNU-alioth/blob/3f40b1d80dfa3246869714ae2a3167216610b421/docs/evidence/2026-10-28-gpu-wifi-bringup.md)
+- `device`: [With pcie\_skip=32 the PARF setup completes and parf\_mhi\_clock\_reset\_ctrl 0x3 becomes 0x13, matching the reference.](https://github.com/FFT-infra/UniXNU-alioth/blob/5c108223264469dbe83d2e85858539d66fea2a44/docs/evidence/2026-10-28-gpu-wifi-bringup.md)
   Command: <code>boot a pcie=9 pcie_skip=32 image and read the PCIE 9 lines from the console capture</code>. Revision: `eeda5a8139786ca8029044708679c40e7382eb1e`.
 
 ## Audio {#audio}
@@ -610,9 +609,9 @@ Components: `QcomXnuUsbDebug`.
 
 ### Evidence
 
-- `device`: [Console enumerated as 1209:316d named QcomXnuUsbDebug; STATUS returned usb=3 er=0 with the worker polling, so the port is live in both directions.](https://github.com/FFT-infra/UniXNU-alioth/blob/3f40b1d80dfa3246869714ae2a3167216610b421/docs/evidence/2026-10-27-boot-diagnostics.md)
+- `device`: [Console enumerated as 1209:316d named QcomXnuUsbDebug; STATUS returned usb=3 er=0 with the worker polling, so the port is live in both directions.](https://github.com/FFT-infra/UniXNU-alioth/blob/5c108223264469dbe83d2e85858539d66fea2a44/docs/evidence/2026-10-27-boot-diagnostics.md)
   Command: <code>read /dev/tty.usbmodem&lt;N&gt; at 115200 8N1 and send SXNU1 ... HELLO / STATUS</code>. Revision: `15a15d7cc526262a64531ff56b3a33bdbc46379c`.
-- `device`: [215 exit records captured. 180 xpcproxy status=0 \(normal\), 13 cryptexd ns=18 code=2, 11 liveactivitiesd sig5, 2 lsd sig11; each process repeats one fixed crash PC, so the faults are deterministic.](https://github.com/FFT-infra/UniXNU-alioth/blob/3f40b1d80dfa3246869714ae2a3167216610b421/docs/evidence/2026-10-27-serial-exit-records.log)
+- `device`: [215 exit records captured. 180 xpcproxy status=0 \(normal\), 13 cryptexd ns=18 code=2, 11 liveactivitiesd sig5, 2 lsd sig11; each process repeats one fixed crash PC, so the faults are deterministic.](https://github.com/FFT-infra/UniXNU-alioth/blob/5c108223264469dbe83d2e85858539d66fea2a44/docs/evidence/2026-10-27-serial-exit-records.log)
   Command: <code>./unixnu build kernel; ./unixnu bootimg; fastboot flash boot_b; read the CDC-ACM console for 420 s</code>. Revision: `15a15d7cc526262a64531ff56b3a33bdbc46379c`.
 
 </div>
