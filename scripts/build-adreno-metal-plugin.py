@@ -8,11 +8,26 @@ owner trust module (make-owner-trust-bundle.py); neither changes the original tr
 import json
 import plistlib
 import re
+import os
 import shutil
 import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+
+# The plugin includes ../NativeMobileDisplay/NativeGOPWire.h beside itself. While GopFramebuffer was a
+# submodule of this repository that path was a symlink into drivers/GopFramebuffer; the device
+# repository owns the fork now and the module arrives through its feeds, so point the name at
+# whichever copy this checkout has. Without it the plugin build stops at a missing header.
+_display = ROOT / 'drivers/NativeMobileDisplay'
+if not (_display / 'NativeGOPWire.h').is_file():
+    for _candidate in [ROOT / 'drivers/GopFramebuffer'] + sorted(ROOT.glob('out/feeds/GopFramebuffer-*')):
+        if (_candidate / 'NativeGOPWire.h').is_file():
+            if _display.is_symlink() or _display.exists():
+                _display.unlink()
+            _display.symlink_to(os.path.relpath(_candidate, ROOT / 'drivers'))
+            break
+
 OUT = ROOT / 'build/adreno-metal-plugin'
 bundle = OUT / 'NativeAdrenoMetal.bundle'
 if OUT.exists():
