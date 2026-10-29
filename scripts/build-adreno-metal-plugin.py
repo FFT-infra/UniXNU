@@ -20,12 +20,19 @@ ROOT = Path(__file__).resolve().parents[1]
 # repository owns the fork now and the module arrives through its feeds, so point the name at
 # whichever copy this checkout has. Without it the plugin build stops at a missing header.
 _display = ROOT / 'drivers/NativeMobileDisplay'
-if not (_display / 'NativeGOPWire.h').is_file():
-    for _candidate in [ROOT / 'drivers/GopFramebuffer'] + sorted(ROOT.glob('out/feeds/GopFramebuffer-*')):
-        if (_candidate / 'NativeGOPWire.h').is_file():
-            if _display.is_symlink() or _display.exists():
-                _display.unlink()
-            _display.symlink_to(os.path.relpath(_candidate, ROOT / 'drivers'))
+_display_ok = (_display / 'NativeGOPWire.h').is_file()
+_framebuffer = ROOT / 'drivers/GopFramebuffer'
+# Some sources name the driver directory, some the NativeMobileDisplay alias; both resolve to the
+# same module, and the module itself arrives through the device feeds now.
+for _name in ('GopFramebuffer', 'NativeMobileDisplay'):
+    _link = ROOT / 'drivers' / _name
+    if (_link / 'NativeGOPWire.h').is_file():
+        continue
+    for _candidate in sorted(ROOT.glob('out/feeds/GopFramebuffer-*')) + [ROOT / 'drivers/GopFramebuffer']:
+        if (_candidate / 'NativeGOPWire.h').is_file() and _candidate != _link:
+            if _link.is_symlink() or _link.exists():
+                _link.unlink()
+            _link.symlink_to(os.path.relpath(_candidate, ROOT / 'drivers'))
             break
 
 OUT = ROOT / 'build/adreno-metal-plugin'
