@@ -78,7 +78,7 @@ outputs = []
 
 [[component]]
 id = "Adreno740"
-repository_id = 1438606505
+repository_id = 1438908905
 kind = "driver"
 function = "A740 kernel GPU driver"
 scope = "gpu"
