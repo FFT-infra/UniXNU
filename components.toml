@@ -78,11 +78,11 @@ outputs = []
 
 [[component]]
 id = "Adreno740"
-repository_id = 1426848889
+repository_id = 1438606505
 kind = "driver"
 function = "A740 kernel GPU driver"
 scope = "gpu"
-repository = "https://github.com/UniXNU/Adreno740.git"
+repository = "https://github.com/FFT-infra/Adreno650.git"
 revision = "bdee54c393c938455c9c8626946fa5c376ea3d45"
 path = "drivers/Adreno740"
 hardware = ["Adreno 740", "SM8550"]
