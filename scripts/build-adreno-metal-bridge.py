@@ -23,14 +23,13 @@ args = parser.parse_args()
 if subprocess.check_output(['git', '-C', str(SOURCE), 'rev-parse', 'HEAD'], text=True).strip() != PIN:
     raise SystemExit('Translator revision differs from the qualified source pin')
 PATCHES = [ROOT / 'drivers/AdrenoMetal/bridge/patches' / name for name in [
-    '0001-optional-constant-output-members.patch', '0002-resource-wait-storage-dependencies.patch',
-    '0003-cache-device-entry-point-priming.patch', '0004-fold-constant-global-field-loads.patch',
-    '0005-keep-module-decodes-and-profile-fingerprints.patch', '0006-skip-draws-without-a-pipeline.patch',
-    '0007-accept-two-plane-rgb-surfaces.patch', '0008-alias-padded-rows-of-written-textures.patch',
-    # The rest stack in order, each on the source the ones before it leave.
-    '0009-keep-final-pass.patch', '0010-fewer-allocations-per-draw.patch', '0011-keep-draw-commands.patch',
-    '0012-keep-draw-lists.patch', '0013-skip-unchanged-rebinds.patch', '0014-map-tracker-keys.patch',
-    '0015-two-plane-shadow-as-memory-lies.patch', '0016-tile-stores-within-rows.patch']]
+    '0001-optional-constant-output-members.patch', '0002-resource-wait-storage-dependencies.patch', '0003-cache-device-entry-point-priming.patch',
+    '0004-fold-constant-global-field-loads.patch', '0005-skip-draws-without-a-pipeline.patch', '0006-batch-barriers-and-key-hash-neutral-maps.patch',
+    '0007-optional-shader-cache-directory.patch', '0008-llvm-bitreverse.patch', '0009-patch-with-no-control-points.patch',
+    '0010-core-image-kernel-libraries.patch', '0011-two-plane-shadow-as-memory-lies.patch', '0012-srgb-extended-range-blend-rounded-model.patch',
+    '0013-growing-memory-blocks.patch', '0014-in-place-written-textures.patch', '0015-in-place-written-host-page-textures.patch',
+    '0016-refuse-rebinds.patch', '0017-heap-texture-size-a-multiple-of-its-alignment.patch', '0018-memory-census-bytes.patch',
+    '0019-allocation-sites.patch', '0020-written-host-page-textures-in-place-at-any-size.patch']]
 
 
 def git_tree(*steps):
@@ -63,6 +62,10 @@ air = out / 'runtime_examples.air'
 subprocess.run([llvm_as, '-o', air, SOURCE / 'crates/metal2vulkan-validation/fixtures/public/examples/runtime_examples.ll'], check=True)
 fc_air = out / 'function_constant.air'
 subprocess.run([llvm_as, '-o', fc_air, SOURCE / 'crates/metal2vulkan-validation/fixtures/public/kernel_function_constant_gate_fold.ll'], check=True)
+# The scanout conversion kernel the frontend carries as AIR (shaders/scanout_convert.ll).
+# AdrenoMetal includes it with include_bytes!, so it has to exist before cargo runs.
+scanout_air = out / 'scanout_convert.air'
+subprocess.run([llvm_as, '-o', scanout_air, ROOT / 'drivers/AdrenoMetal/shaders/scanout_convert.ll'], check=True)
 manifest = out / 'Cargo.toml'
 manifest.write_text('\n'.join([
     '[package]', 'name = "adreno-metal-bridge"', 'version = "0.1.0"', 'edition = "2024"', 'rust-version = "1.98"', '[workspace]',
@@ -83,7 +86,7 @@ triple = 'aarch64-apple-ios' if args.target == 'ios' else 'aarch64-apple-darwin'
 # The translator source the runtime is built from (its pin and recorded patches), which keys the shader cache: shader priming keeps what it
 # finished while this stays the same (PrimeShaders.h).
 runtime_id = hashlib.sha256((PIN + '\n' + states[-1]).encode()).hexdigest()[:32]
-env = dict(os.environ, NMB_RUNTIME_ID=runtime_id, NMB_FIXTURE_AIR=str(air), NMB_FC_AIR=str(fc_air), IPHONEOS_DEPLOYMENT_TARGET='17.0', MACOSX_DEPLOYMENT_TARGET='14.0')
+env = dict(os.environ, NMB_RUNTIME_ID=runtime_id, NMB_FIXTURE_AIR=str(air), NMB_FC_AIR=str(fc_air), NMB_SCANOUT_AIR=str(scanout_air), IPHONEOS_DEPLOYMENT_TARGET='17.0', MACOSX_DEPLOYMENT_TARGET='14.0')
 target_dir = ROOT / 'build/m2v-target'
 log = out / ('build-%s.log' % args.target)
 with log.open('w') as stream:
