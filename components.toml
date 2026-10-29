@@ -100,7 +100,7 @@ legacy_outputs = { "build/native-adreno/libNativeAdreno.a" = "build/adreno740/li
 
 [[component]]
 id = "AdrenoMetal"
-repository_id = 1426849428
+repository_id = 1438606505
 kind = "driver"
 function = "Metal frontend through metal2vulkan and Turnip"
 scope = "graphics"
@@ -206,7 +206,7 @@ legacy_name = "NativeGeniSpi"
 
 [[component]]
 id = "GopFramebuffer"
-repository_id = 1426849559
+repository_id = 1438234191
 kind = "driver"
 function = "UEFI GOP framebuffer and MobileFramebuffer integration"
 scope = "display"
