@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Pack the owner-built Adreno Metal plugin into a GPU addon file for the boot payload.
 
-  make-gpu-addon.py [--publish] [--clients NAME,...] [--wallpaper DIR] [--prime-list FILE] OUTPUT
+  make-gpu-addon.py [--publish] [--clients NAME,...] [--selftest] [--wallpaper DIR] [--prime-list FILE] OUTPUT
 
 The files are the ones add-gpu-plugin-data.py stages into a Data seed, with the same paths below /private/var/ngpu and the same modes:
 addons/NativeAdrenoMetal.bundle/*, addons/NativeAdrenoMetal.publish (--publish), addons/NativeAdrenoMetal.clients (--clients),
@@ -32,8 +32,9 @@ def pad(data):
 
 
 def main():
-    args = [a for a in sys.argv[1:] if a != '--publish']
-    publish = len(args) != len(sys.argv) - 1
+    selftest = '--selftest' in sys.argv[1:]
+    args = [a for a in sys.argv[1:] if a not in ('--publish', '--selftest')]
+    publish = '--publish' in sys.argv[1:]
     clients = None
     wallpaper = None
     if '--wallpaper' in args:
@@ -71,6 +72,11 @@ def main():
         files.append(('addons/NativeAdrenoMetal.publish', 0o644, b'1\n'))
     if clients:
         files.append(('addons/NativeAdrenoMetal.clients', 0o644, ('\n'.join(clients) + '\n').encode()))
+    if selftest:
+        # The known-image check the GPU porting guide asks for before the UI workload: the plugin runs
+        # the bridge's compute/render/import fixtures once per process and reports wrong pixels apart
+        # from what reaches the panel.
+        files.append(('addons/NativeAdrenoMetal.selftest', 0o644, b'1\n'))
     if prime_list:
         files.append(('addons/NativeAdrenoMetal.primelist', 0o644, prime_list.read_bytes()))
     files.append(('bin/adrenoprobed', 0o755, (PLUGIN / 'adrenoprobed').read_bytes()))
