@@ -346,8 +346,11 @@ def generate(dtb, config, *, unique_chip_id=None, data=False, trust=False, addon
         values = registers(entry)
         if len(values) != 1 or values[0][0] > 0xffffffff:
             raise Error(f'{entry.name}: CPU affinity must fit a u32')
+        # Every enabled core is "running". The first-only form made pe_identify_machine's scan stop at
+        # cpu0, which is fine for the timebase it copies there, but it also told XNU that the six
+        # secondaries were not up; and it is what a DTS status of okay means.
         properties = [('reg', struct.pack('<I', values[0][0])),
-                      ('state', b'running\0' if not cpu_nodes else b'waiting\0'), ('device_type', b'cpu\0'),
+                      ('state', b'running\0'), ('device_type', b'cpu\0'),
                       ('compatible', entry.properties['compatible']),
                       ('timebase-frequency', struct.pack('<I', cpus.scalar('timebase-frequency')))]
         if 'unixnu,cluster-type' in entry.properties:
