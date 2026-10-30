@@ -346,11 +346,22 @@ def generate(dtb, config, *, unique_chip_id=None, data=False, trust=False, addon
         values = registers(entry)
         if len(values) != 1 or values[0][0] > 0xffffffff:
             raise Error(f'{entry.name}: CPU affinity must fit a u32')
-        # Every enabled core is "running". The first-only form made pe_identify_machine's scan stop at
-        # cpu0, which is fine for the timebase it copies there, but it also told XNU that the six
-        # secondaries were not up; and it is what a DTS status of okay means.
+        # Only the first enabled core is "running"; the rest are "waiting".
+        #
+        # XNU's ml_is_boot_cpu() (osfmk/arm64/machine_routines.c:966-981) reads nothing
+        # but this string: any core whose state says running is taken to be the boot cpu,
+        # and :1141 asserts that there is exactly one. Marking all eight running therefore
+        # panics on the second core, and it does so before serial_init(), so the console
+        # shows nothing at all -- the failure looks like a firmware hang.
+        #
+        # state is not "this core is usable". A core becomes usable through the SoC's
+        # secondary start patch (native-smp-secondary) and armcpu-self-ipi, which are
+        # separate inputs. Commit 4ed7b68 changed this to every-core-running on the
+        # grounds that the board's SMP bring-up measured all eight taking work; that
+        # observation was right and this was the wrong lever for it.
+        state = b'running\0' if not cpu_nodes else b'waiting\0'
         properties = [('reg', struct.pack('<I', values[0][0])),
-                      ('state', b'running\0'), ('device_type', b'cpu\0'),
+                      ('state', state), ('device_type', b'cpu\0'),
                       ('compatible', entry.properties['compatible']),
                       ('timebase-frequency', struct.pack('<I', cpus.scalar('timebase-frequency')))]
         if 'unixnu,cluster-type' in entry.properties:
