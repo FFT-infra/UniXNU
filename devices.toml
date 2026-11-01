@@ -53,7 +53,7 @@ title_zh = "Redmi K40（alioth）"
 format = 2
 legacy_page = "preserve"
 soc = "SM8250"
-summary = "Format 2 board, DTS and SM8250 shared support; kernel and image integration pending"
+summary = "Boots to launchd; GPU accelerator and Metal plugin connect, desktop drawing unconfirmed; no Wi-Fi"
 repository_id = 1432549428
 revision = "520581af69b6fc57d346b60d614756f04612823a"
 board = "alioth"
@@ -355,7 +355,7 @@ legacy_page = "preserve"
 soc = "SDM660"
 summary = "eMMC-backed mockfs root and EL0 test init; APFS probes in development"
 repository_id = 1431566463
-revision = "26da797e6b2c8df2f0e2f51a298c596cffa33f9e"
+revision = "389ea8d8e5c88a9d5193bd9318ea278ece58f432"
 board = "clover"
 
 [[device]]
@@ -1777,18 +1777,6 @@ repository_id = 1428693704
 revision = "db88a20f85faadc489ddc48f4371500c9b7871b6"
 
 [[device]]
-name = "pd2049"
-repository = "Kaurisss/UniXNU-PD2049"
-title = "vivo iQOO 7 V2049A early XNU bring-up"
-title_zh = "vivo iQOO 7 V2049A early XNU bring-up"
-format = 1
-legacy_page = "link"
-repository_id = 1439301943
-revision = "214be42034e0d137f6bc5d72e923d881aaf6c4c9"
-board = "pd2049"
-soc = "SM8350"
-
-[[device]]
 name = "pdx203"
 repository = "chardidathing/UniXNU-pdx203"
 title = "Sony Xperia 1 II (pdx203)"
@@ -1822,7 +1810,7 @@ title_zh = "Xiaomi Poco F6 / Redmi Turbo 3 (hoshikv)"
 format = 2
 legacy_page = "link"
 repository_id = 1429525166
-revision = "27eea695b4eed0eeae2d79722e81335d40bc03d9"
+revision = "34b7e5320d3deea4fac30e00f0ab79c762bb46b0"
 board = "peridot"
 soc = "SM8635"
 os_profile = "ios-27.0.1-24A446"
@@ -2916,8 +2904,8 @@ soc = "SM8550"
 [[device]]
 name = "wayne"
 repository = "gs240333/UniXNU-wayne"
-title = "Xiaomi Mi 6X (2018)"
-title_zh = "Xiaomi Mi 6X (2018)"
+title = "Xiaomi MI 6X"
+title_zh = "Xiaomi MI 6X"
 format = 2
 legacy_page = "link"
 repository_id = 1437039549
