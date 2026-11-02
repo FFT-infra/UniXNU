@@ -1,0 +1,17 @@
+diff --git a/bsd/kern/kern_exec.c b/bsd/kern/kern_exec.c
+index 11eaa7d..b073ed8 100644
+--- a/bsd/kern/kern_exec.c
++++ b/bsd/kern/kern_exec.c
+@@ -5285,6 +5285,12 @@ __mac_execve(proc_t p, struct __mac_execve_args *uap, int32_t *retval __unused)
+ 
+ 	if (!error) {
+ 		exec_done = TRUE;
++		/* Count every userspace exec that succeeded. Bands 10 to 13 read this count as a
++		 * four-bit binary number, which says how far launchd got: zero means it never forked,
++		 * a handful means it started a few daemons and stalled. The kernel paints it; no
++		 * userspace cooperation is needed. */
++		extern void native_legacy_count_exec(void);
++		native_legacy_count_exec();
+ 		assert(imgp->ip_new_thread != NULL);
+ 
+ 		exec_resettextvp(p, imgp);
