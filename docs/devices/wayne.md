@@ -1,4 +1,4 @@
-# Xiaomi Mi 6X \(2018\)
+# Xiaomi MI 6X
 
 [gs240333/UniXNU-wayne](https://github.com/gs240333/UniXNU-wayne)
 
