@@ -179,10 +179,13 @@
  /*
   * Copyright (c) 2000-2020 Apple Inc. All rights reserved.
   *
-@@ -1343,7 +1344,9 @@
+@@ -1343,7 +1344,12 @@
  	/*
  	 * Actually load the image file we previously decided to load.
  	 */
++	if (!strcmp(p->p_name, "KaleidoscopePoster") || !strcmp(p->p_name, "AegirPoster")) {
++		return ENOENT;
++	}
 +	boot_progress_process_stage(proc_getpid(p),p->p_name,"exec load_machfile enter");
  	lret = load_machfile(imgp, mach_header, thread, &map, &load_result);
 +	boot_progress_process_stage(proc_getpid(p),p->p_name,"exec load_machfile returned");
