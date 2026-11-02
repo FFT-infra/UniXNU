@@ -19,6 +19,12 @@ from pathlib import Path
 PROFILES = {
     None: (('Library/Wallpaper/Collections/iPadOS_17~ipad.wallpaperCollection/Wallpapers/7570.iPadOS_17_Flat-1024w-1366h@2x~ipad.wallpaper/'
             '7570.iPadOS_17_Flat_Background-1024w-1366h@2x~ipad.ca'), {'J120': 'J120', 'J120-Dark': 'J120-Dark'}),
+    # The 1024x1366 layered variant: this board's own collection, and the bundle sheng's latest
+    # overlay targets. The 17 profile's Flat variant carries J120/J120-Dark; this one carries a
+    # background layer named for its colours.
+    'ipados27-1024': (('Library/Wallpaper/Collections/iPadOS_17~ipad.wallpaperCollection/Wallpapers/7570.iPadOS_17-1024w-1366h@2x~ipad.wallpaper/'
+                  '7570.iPadOS_17_Background-1024w-1366h@2x~ipad.ca'),
+                 {'Background%20Light': 'Background-Light', 'Background%20Dark': 'Background-Dark'}),
     'ipados27': (('Library/Wallpaper/Collections/iPadOS_17~ipad.wallpaperCollection/Wallpapers/7570.iPadOS_17-1032w-1376h@2x~ipad.wallpaper/'
                   '7570.iPadOS_17_Background-1032w-1376h@2x~ipad.ca'),
                  {'Background%20Light': 'Background-Light', 'Background%20Dark': 'Background-Dark'}),
@@ -31,6 +37,7 @@ PROFILES = {
 # Longest edge of each profile's PNG images: None keeps the image's own size, a negative value divides images wider than its absolute
 # value by three.
 EDGES = {None: 2732,   # iPadOS 17's HEIC images are 3416 pixels square; PNG at that size does not fit the boot payload
+         'ipados27-1024': None,   # this variant's images are 1620 x 1080, already payload sized
          'ipados27': None, 'ipados27-floating': -1000}
 
 
