@@ -50,3 +50,6 @@ __pycache__/
 .env
 local.toml
 unixnu.local.toml
+
+# EDK2 intermediate build tree under the board package.
+package/Build/

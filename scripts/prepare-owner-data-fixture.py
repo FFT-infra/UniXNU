@@ -13,16 +13,21 @@ import subprocess
 ROOT = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--output', type=Path, default=ROOT / 'build/owner-data-fixture')
+# The measured Data volume was 32 MiB, and cryptexd aborted with
+# "mkdirat: [28: No space left on device]" on the first boot that reached it. The
+# seed holds the original private/var, so the size has to fit the runtime tree that
+# iOS creates under it, not just the seed contents.
+parser.add_argument('--size-mib', type=int, default=32)
 args = parser.parse_args()
 fixture = args.output.resolve()
-image = fixture / 'owner-data-32.cdr'
+image = fixture / ('owner-data-%d.cdr' % args.size_mib)
 if image.exists():
     raise SystemExit('Refuse to overwrite an existing Data seed')
 source = ROOT / '.cache/firmware/target-volumes/os-mount'
 if hashlib.sha256((source / 'sbin/launchd').read_bytes()).hexdigest() != '8cec9a3c44a443b08e977ccc5d577850316ad428c575dc01f09b018dbd5b6a25':
     raise SystemExit('Require the unchanged supplied original OS mount')
 fixture.mkdir(parents=True, exist_ok=True)
-subprocess.run(['hdiutil', 'create', '-size', '32m', '-layout', 'NONE', '-fs', 'APFS',
+subprocess.run(['hdiutil', 'create', '-size', '%dm' % args.size_mib, '-layout', 'NONE', '-fs', 'APFS',
                 '-volname', 'OwnerData', '-type', 'UDTO', str(image)], check=True)
 target = fixture / 'mount'
 target.mkdir(exist_ok=True)
@@ -59,7 +64,7 @@ try:
 finally:
     subprocess.run(['hdiutil', 'detach', device], check=True)
 data = image.read_bytes()
-if len(data) != 32 * 1024**2 or data[32:36] != b'NXSB':
+if len(data) != args.size_mib * 1024**2 or data[32:36] != b'NXSB':
     raise SystemExit('Host formatting did not produce the requested raw APFS container')
 report = dict(volume_uuid=volume_uuid, bytes=len(data), sha256=hashlib.sha256(data).hexdigest(), source_regular_files=count,
               source_regular_bytes=total, guest_mutable=True, initial_seed_signature_verified=False,

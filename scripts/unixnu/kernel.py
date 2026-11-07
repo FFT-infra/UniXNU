@@ -222,14 +222,20 @@ def preflight(ctx):
     log(f'kernel preflight: {len(ctx.component_specs)} selected components - archive inputs present')
 
 
+def missing_objects(tree):
+    """Objects named by the last link but absent now, which an incremental pass has to rebuild first."""
+    filelist = tree / 'build/xnu/ios-obj/DEVELOPMENT_ARM64_BCM2837/link.filelist'
+    if not filelist.is_file():
+        return []
+    return [name for name in filelist.read_text().splitlines() if name.strip() and not Path(name.strip()).is_file()]
+
+
 def build(ctx, modules):
     log('kernel: XNU')
     script = ctx.tree / 'scripts/build-xnu-4k-baseline.sh'
     if not script.is_file():
         raise Error(f'{script} missing')
     env = dict(os.environ)
-    # ar records each member's mtime; without this the archives change on every build and the release reference never hits its cache.
-    env['ZERO_AR_DATE'] = '1'
     if platform.system() == 'Linux':
         for name in ('git', 'make', 'cmake', 'ninja', 'unifdef'):
             tool(name, 'run sudo scripts/linux/setup-toolchain.py')
@@ -250,18 +256,23 @@ def build(ctx, modules):
     framework = ctx.tree / '.cache/fakeroot/System/Library/Frameworks/Kernel.framework/Versions/A'
     headers_ready = any((framework / directory / 'kern/clock.h').is_file()
                         for directory in ('Headers', 'PrivateHeaders'))
-    if not record.is_file() or not headers_ready:
+    if not record.is_file() or not headers_ready or missing_objects(ctx.tree):
         # The archive builders and the boot progress layer read compile records of the XNU build, which only an earlier
         # pass leaves behind. A first build from scratch therefore runs one pass without them; XNU_BOOTSTRAP makes it
         # skip the archive checks and link without the archives, so it stops at the link and only the records are
         # required of it.
+        # A pass that changes an owner-mode stamp (build-xnu-4k-baseline.sh) deletes the objects it invalidates,
+        # kern_exec.o among them, and the archive builders then read a link.filelist that names files that no longer
+        # exist. The same bootstrap pass rebuilds them before those builders run.
         log('kernel: bootstrap pass for compile records and kernel headers')
-        subprocess_env = {**env, 'XNU_BOOT_PROGRESS': '0', 'XNU_BOOTSTRAP': '1'}
+        # XNU_BOOT_PROGRESS and XNU_QCOM_USB_DEBUG both gate code that links an archive the bootstrap pass deliberately
+        # leaves out, so both are off for it. Their stamps then make the real pass rebuild the objects they cover.
+        subprocess_env = {**env, 'XNU_BOOT_PROGRESS': '0', 'XNU_QCOM_USB_DEBUG': '0', 'XNU_BOOTSTRAP': '1'}
         try:
             run(['bash', script], cwd=ctx.tree, env=subprocess_env, log_file=ctx.logs / 'kernel-bootstrap.log')
         except Error:
             if not record.is_file() or not any((framework / directory / 'kern/clock.h').is_file()
-                                              for directory in ('Headers', 'PrivateHeaders')):
+                                              for directory in ('Headers', 'PrivateHeaders')) or missing_objects(ctx.tree):
                 raise
     # Revalidate the selected source and regenerate headers on every archive build.
     # A pre-existing directory can belong to a different OS profile/revision.
