@@ -99,6 +99,26 @@ legacy_name = "NativeAdreno"
 legacy_outputs = { "build/native-adreno/libNativeAdreno.a" = "build/adreno740/libAdreno740.a" }
 
 [[component]]
+id = "Adreno650"
+kind = "driver"
+function = "A650 kernel GPU driver for SM8250"
+scope = "gpu"
+repository = "https://github.com/FFT-infra/Adreno650.git"
+revision = "6effc7352a8f1d3d20ec400a22db21813863c369"
+path = "drivers/Adreno650"
+hardware = ["Adreno 650", "SM8250"]
+os_abi = ["ipados-17.7.11-21H461"]
+board_dependencies = ["ZAP firmware", "GPU power policy", "reserved memory"]
+verified_devices = []
+dependencies = ["AdrenoPM4", "AdrenoFirmware", "ArmSmmu4K"]
+source_files = ["NativeAdrenoService.cpp"]
+runtime_identifiers = ["NativeAdreno", "NativeAdrenoService.cpp", "org.blu-sharky.NativeAdreno", "NativeAdrenoGpuService", "NativeAdrenoSmmuService", "NativeAdrenoGmuService"]
+build_stage = "kernel"
+build = ["build-adreno650.py"]
+outputs = ["build/adreno740/libAdreno740.a"]
+legacy_name = "NativeAdreno"
+
+[[component]]
 id = "AdrenoMetal"
 repository_id = 1426849428
 kind = "driver"
