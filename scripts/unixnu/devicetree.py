@@ -203,7 +203,7 @@ def arm_io_window(hardware):
 
 
 STRINGS = {'compatible', 'device_type', 'reg-names', 'interrupt-names', 'clock-names', 'method'}
-U32 = {'phandle', 'linux,phandle', '#interrupt-cells', '#iommu-cells', '#clock-cells', 'clock-frequency', 'timebase-frequency', 'transport-encoding', 'transport-speed'}
+U32 = {'phandle', 'linux,phandle', '#interrupt-cells', '#iommu-cells', '#clock-cells', 'clock-frequency', 'timebase-frequency'}
 U64 = {'redistributor-stride'}
 FLAGS = {'interrupt-controller', 'dma-coherent'}
 REFERENCES = {'interrupt-parent': None, 'iommus': '#iommu-cells', 'clocks': '#clock-cells'}
@@ -348,8 +348,22 @@ def generate(dtb, config, *, unique_chip_id=None, data=False, trust=False, addon
         values = registers(entry)
         if len(values) != 1 or values[0][0] > 0xffffffff:
             raise Error(f'{entry.name}: CPU affinity must fit a u32')
+        # Only the first enabled core is "running"; the rest are "waiting".
+        #
+        # XNU's ml_is_boot_cpu() (osfmk/arm64/machine_routines.c:966-981) reads nothing
+        # but this string: any core whose state says running is taken to be the boot cpu,
+        # and :1141 asserts that there is exactly one. Marking all eight running therefore
+        # panics on the second core, and it does so before serial_init(), so the console
+        # shows nothing at all -- the failure looks like a firmware hang.
+        #
+        # state is not "this core is usable". A core becomes usable through the SoC's
+        # secondary start patch (native-smp-secondary) and armcpu-self-ipi, which are
+        # separate inputs. Commit 4ed7b68 changed this to every-core-running on the
+        # grounds that the board's SMP bring-up measured all eight taking work; that
+        # observation was right and this was the wrong lever for it.
+        state = b'running\0' if not cpu_nodes else b'waiting\0'
         properties = [('reg', struct.pack('<I', values[0][0])),
-                      ('state', b'running\0' if not cpu_nodes else b'waiting\0'), ('device_type', b'cpu\0'),
+                      ('state', state), ('device_type', b'cpu\0'),
                       ('compatible', entry.properties['compatible']),
                       ('timebase-frequency', struct.pack('<I', cpus.scalar('timebase-frequency')))]
         if 'unixnu,cluster-type' in entry.properties:

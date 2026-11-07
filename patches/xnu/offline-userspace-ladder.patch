@@ -1,0 +1,50 @@
+diff --git a/bsd/kern/kern_exec.c b/bsd/kern/kern_exec.c
+index 7ddd310..11eaa7d 100644
+--- a/bsd/kern/kern_exec.c
++++ b/bsd/kern/kern_exec.c
+@@ -7971,7 +7971,15 @@ load_init_program_at_path(proc_t p, user_addr_t scratch_addr, const char* path,
+ 	 */
+ 	set_security_token(p, proc_ucred_unsafe(p));
+ 
+-	return execve(p, &init_exec_args, retval);
++	extern void native_legacy_paint_userspace_band(unsigned);
++	int offline_exec_error = execve(p, &init_exec_args, retval);
++	/* Band 6: process 1 loaded its image. Only a success paints, so a red band means AMFI,
++	 * the trust cache and the union mount all accepted this binary; its absence with bands
++	 * 4 and 5 present puts the failure in the exec path and nowhere else. */
++	if (!offline_exec_error) {
++		native_legacy_paint_userspace_band(6);
++	}
++	return offline_exec_error;
+ }
+ 
+ static const char * init_programs[] = {
+@@ -8017,6 +8025,12 @@ void
+ load_init_program(proc_t p)
+ {
+ 	boot_progress_stage("load_init_program enter");
++	/* Band 5: load_init_program was entered. Drawn before the owner SystemOS and Data mounts
++	 * below, because those panic on their own failure and a panic screen already names them.
++	 * What this band adds is the case neither reports: band 4 present and band 5 absent puts
++	 * the stop between bsd_init returning and init being loaded. */
++	extern void native_legacy_paint_userspace_band(unsigned);
++	native_legacy_paint_userspace_band(5);
+ 	uint32_t i;
+ 	int error;
+ 	vm_map_t map = current_map();
+diff --git a/bsd/kern/kern_sig.c b/bsd/kern/kern_sig.c
+index 6f93e15..706dd3c 100644
+--- a/bsd/kern/kern_sig.c
++++ b/bsd/kern/kern_sig.c
+@@ -3409,6 +3409,11 @@ bsd_ast(thread_t thread)
+ 
+ 	if (!bsd_init_done) {
+ 		bsd_init_done = 1;
++		/* Band 4: the first bsd_ast fired, so bsd_init() ran to completion. This is the
++		 * earliest point userspace can be said to be on its way, and it is past every
++		 * kernel-side mount and root-authorisation step. */
++		extern void native_legacy_paint_userspace_band(unsigned);
++		native_legacy_paint_userspace_band(4);
+ 		bsdinit_task();
+ 	}
+ }

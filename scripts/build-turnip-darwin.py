@@ -18,6 +18,8 @@ ROOT = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--target', choices=('host', 'ios', 'ios27'), default='host')
 parser.add_argument('--configure-only', action='store_true')
+parser.add_argument('--extra-patch', type=Path, action='append', default=[], help='Additional device-owned patches already applied to the Mesa source')
+parser.add_argument('--patch-list', type=Path, help='Device-owned exact recorded baseline; source validation remains mandatory')
 parser.add_argument('--builtin-pack', type=Path, help='Embed an exact-source/profile/GPU-bound own builtin pack; no runtime compiler fallback')
 args = parser.parse_args()
 SOURCE = ROOT / '.cache/mesa-work'
@@ -30,6 +32,9 @@ def read(cmd):
 
 
 pins = json.loads((ROOT / 'scripts/data/adreno-compiler-inputs.json').read_text())
+if args.patch_list:
+    pins['patches'] = json.loads(args.patch_list.read_text())['patches']
+pins['patches'] = [*pins['patches'], *(str(p.resolve()) for p in args.extra_patch)]
 if read(['git', '-C', SOURCE, 'rev-parse', 'HEAD']) != pins['mesa']['commit']:
     sys.exit('Pinned Mesa source differs')
 validate_recorded_patches(ROOT, SOURCE, pins)
