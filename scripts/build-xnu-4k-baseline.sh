@@ -100,7 +100,7 @@ if not stamp.exists() or stamp.read_text() != identity:
                              ('bsd', ['bsd_init','kern_exec','kern_exit']), ('pexpert', ['pe_kprintf'])]:
         for name in names:
             (out / directory / 'DEVELOPMENT' / (name + '.o')).unlink(missing_ok=True)
-    (out / 'mach.development.bcm2837.unstripped').unlink(missing_ok=True)
+    (out / 'mach.development.bcm2837.unstripped.noctf').unlink(missing_ok=True)
     out.mkdir(parents=True, exist_ok=True)
     stamp.write_text(identity)
 PY
@@ -359,7 +359,10 @@ if [ "$(cat "$SHENG_PMGR_STAMP" 2>/dev/null || echo 0)" != "$SHENG_PMGR" ]; then
   rm -f "$ROOT/build/xnu/ios-obj/DEVELOPMENT_ARM64_BCM2837/bsd/DEVELOPMENT/bsd_init.o"
   printf '%s\n' "$SHENG_PMGR" > "$SHENG_PMGR_STAMP"
 fi
-EXTRA_MAKE_ARGS+=("bsd_init.o_CFLAGS_ADD=-DXNU_SHENG_PMGR=$SHENG_PMGR -DXNU_VERIFIED_ROOT_PROBE=$OWNER_ROOT_PROBE -DXNU_OWNER_ROOT_AUDIT=$OWNER_ROOT_AUDIT -DXNU_OWNER_ROOT_TRUST=$OWNER_ROOT_TRUST -DXNU_ADRENO_FIRMWARE_PROBE=$ADRENO_FIRMWARE_PROBE -DXNU_ADRENO_PM4_PROBE=$ADRENO_PM4_PROBE -DXNU_SMMU4K_PROBE=$SMMU4K_PROBE -DXNU_CONSTANT_UPLOADS_PROBE=$CONSTANT_UPLOADS_PROBE -DXNU_NATIVE_LEGACY_DISPLAY=${XNU_NATIVE_LEGACY_DISPLAY:-0} -DXNU_NATIVE_OFFLINE_GPU=$NATIVE_OFFLINE_GPU")
+QCOM_USB_DEBUG=${XNU_QCOM_USB_DEBUG:-0}
+QCOM_USB_INCLUDE="-I$ROOT/drivers/QcomXnuUsbDebug/include"
+echo "build-xnu: QCOM_USB_DEBUG=$QCOM_USB_DEBUG (env=${XNU_QCOM_USB_DEBUG:-unset})" >&2
+EXTRA_MAKE_ARGS+=("bsd_init.o_CFLAGS_ADD=-DXNU_SHENG_PMGR=$SHENG_PMGR -DXNU_VERIFIED_ROOT_PROBE=$OWNER_ROOT_PROBE -DXNU_OWNER_ROOT_AUDIT=$OWNER_ROOT_AUDIT -DXNU_OWNER_ROOT_TRUST=$OWNER_ROOT_TRUST -DXNU_ADRENO_FIRMWARE_PROBE=$ADRENO_FIRMWARE_PROBE -DXNU_ADRENO_PM4_PROBE=$ADRENO_PM4_PROBE -DXNU_SMMU4K_PROBE=$SMMU4K_PROBE -DXNU_CONSTANT_UPLOADS_PROBE=$CONSTANT_UPLOADS_PROBE -DXNU_NATIVE_LEGACY_DISPLAY=${XNU_NATIVE_LEGACY_DISPLAY:-0} -DXNU_NATIVE_OFFLINE_GPU=$NATIVE_OFFLINE_GPU -DXNU_QCOM_USB_DEBUG=$QCOM_USB_DEBUG $QCOM_USB_INCLUDE")
 NATIVE_MOBILE_DISPLAY=${XNU_NATIVE_MOBILE_DISPLAY:-0}
 if [ "$NATIVE_MOBILE_DISPLAY" != 0 ] && [ "$NATIVE_MOBILE_DISPLAY" != 1 ]; then
   echo 'XNU_NATIVE_MOBILE_DISPLAY must be 0 or 1' >&2
@@ -504,7 +507,16 @@ if [ "$(cat "$NATIVE_AIR_STAMP" 2>/dev/null || echo 0)" != "$NATIVE_AIR_INIT" ];
   rm -f "$ROOT/build/xnu/ios-obj/DEVELOPMENT_ARM64_BCM2837/bsd/DEVELOPMENT/kern_exec.o"
   printf '%s\n' "$NATIVE_AIR_INIT" > "$NATIVE_AIR_STAMP"
 fi
-EXTRA_MAKE_ARGS+=("kern_exec.o_CFLAGS_ADD=-DXNU_NATIVE_AIR_INIT=$NATIVE_AIR_INIT -DXNU_OWNER_CACHE_MOUNT=$OWNER_CACHE_MOUNT -DXNU_OWNER_CACHE_STARTUP=$OWNER_CACHE_STARTUP -DXNU_OWNER_BOOT_MANIFEST=$OWNER_BOOT_MANIFEST -DXNU_OWNER_DATA_MOUNT=$OWNER_DATA_MOUNT -DXNU_NATIVE_RAM_BLOCK=$NATIVE_RAM_BLOCK -DXNU_OWNER_CRYPTEX_FILES=$OWNER_CRYPTEX_FILES -DXNU_OWNER_UNION_SYSTEMOS=$OWNER_UNION_SYSTEMOS -include $OWNER_DATA_HEADER")
+EXTRA_MAKE_ARGS+=("kern_exec.o_CFLAGS_ADD=-DXNU_NATIVE_AIR_INIT=$NATIVE_AIR_INIT -DXNU_OWNER_CACHE_MOUNT=$OWNER_CACHE_MOUNT -DXNU_OWNER_CACHE_STARTUP=$OWNER_CACHE_STARTUP -DXNU_OWNER_BOOT_MANIFEST=$OWNER_BOOT_MANIFEST -DXNU_OWNER_DATA_MOUNT=$OWNER_DATA_MOUNT -DXNU_NATIVE_RAM_BLOCK=$NATIVE_RAM_BLOCK -DXNU_OWNER_CRYPTEX_FILES=$OWNER_CRYPTEX_FILES -DXNU_OWNER_UNION_SYSTEMOS=$OWNER_UNION_SYSTEMOS -DXNU_BOOT_PROGRESS=$BOOT_PROGRESS -include $OWNER_DATA_HEADER")
+# XNU_BOOT_PROGRESS also has to reach kern_exec.o, not only the global EXTRA_CFLAGS. The
+# watchdog-policy call in load_init_program is inside `#if XNU_BOOT_PROGRESS`, so with the flag
+# only global that block compiled out and sheng-lite/sheng-disable-watchdogd stayed dead keys
+# even with the option on. The stamp forces the object to rebuild when the value changes.
+BOOT_PROGRESS_STAMP=$ROOT/build/xnu/ios-obj/DEVELOPMENT_ARM64_BCM2837/.boot-progress-mode
+if [ "$(cat "$BOOT_PROGRESS_STAMP" 2>/dev/null || echo -)" != "$BOOT_PROGRESS" ]; then
+  rm -f "$ROOT/build/xnu/ios-obj/DEVELOPMENT_ARM64_BCM2837/bsd/DEVELOPMENT/kern_exec.o"
+  printf '%s\n' "$BOOT_PROGRESS" > "$BOOT_PROGRESS_STAMP"
+fi
 OWNER_CACHE_STAMP=$ROOT/build/xnu/ios-obj/DEVELOPMENT_ARM64_BCM2837/.owner-cache-mount-mode
 if [ "$(cat "$OWNER_CACHE_STAMP" 2>/dev/null || echo 0:0)" != "$OWNER_CACHE_MOUNT:$OWNER_CACHE_STARTUP" ]; then
   rm -f "$ROOT/build/xnu/ios-obj/DEVELOPMENT_ARM64_BCM2837/bsd/DEVELOPMENT/kern_exec.o"
@@ -728,8 +740,9 @@ import sys
 import hashlib
 records = [json.loads(Path(p).with_name('bindings.json').read_text()) for p in sys.argv[1:]]
 for archive, record in zip(sys.argv[1:], records):
-    path = Path(archive)
-    obj = path.with_name(path.stem.removeprefix('lib') + '.o')
+    # The object name is the component's, not the archive's: libVirtioMmioBlock.a holds
+    # NativeVirtioBlock.o and libRamBlock.a holds NativeRamBlock.o. bindings.json records it.
+    obj = Path(archive).with_name(record['component'] + '.o')
     if hashlib.sha256(obj.read_bytes()).hexdigest() != record['compiled_object_sha256']:
         raise SystemExit('Re-audit the actual compiled storage object before linking')
 first, second = [record['bindings'] for record in records]
@@ -775,6 +788,38 @@ PY_BINDINGS
     KERNEL_EXTRA_ARCHIVES="$KERNEL_EXTRA_ARCHIVES -Wl,-force_load,$ROOT/build/boot-progress/libBootProgress.a"
     KERNEL_ARCHIVE_DEPENDENCIES="$KERNEL_ARCHIVE_DEPENDENCIES $ROOT/build/boot-progress/libBootProgress.a"
   fi
+  # The CDC-ACM debug console. Its patches guard every addition behind
+  # `#if XNU_QCOM_USB_DEBUG`, so the archive is only useful when the same switch reaches the six
+  # objects the patches edit. force_load the archive because nothing in the kernel references its
+  # symbols until the patched call sites do.
+  if [ "$QCOM_USB_DEBUG" = 1 ]; then
+    echo "build-xnu: qcom usb block entered, BOOTSTRAP=$BOOTSTRAP" >&2
+    QCOM_USB_ARCHIVE=${XNU_QCOM_USB_ARCHIVE:-$ROOT/.cache/qcom-usb-debug/libQcomXnuUsbDebug.a}
+    if [ -f "$QCOM_USB_ARCHIVE" ]; then
+      KERNEL_EXTRA_ARCHIVES="$KERNEL_EXTRA_ARCHIVES -Wl,-force_load,$QCOM_USB_ARCHIVE"
+      KERNEL_ARCHIVE_DEPENDENCIES="$KERNEL_ARCHIVE_DEPENDENCIES $QCOM_USB_ARCHIVE"
+      # The patched files include <QcomXnuUsbDebug.h> from the module's include/ directory, so
+      # the same objects that get the switch also need that path.
+      # A bootstrap pass compiles these objects with the switch off, and an incremental pass
+      # reuses them. The stamp deletes them when the value changes, as the boot progress stamp
+      # does, or the patched call sites stay compiled out while the archive is force-loaded.
+      QCOM_USB_STAMP=$ROOT/build/xnu/ios-obj/DEVELOPMENT_ARM64_BCM2837/.qcom-usb-debug-mode
+      if [ "$(cat "$QCOM_USB_STAMP" 2>/dev/null || echo -)" != "$QCOM_USB_DEBUG" ]; then
+        for object in pe_kprintf printf debug serial_console serial_general; do
+          rm -f "$ROOT/build/xnu/ios-obj/DEVELOPMENT_ARM64_BCM2837/pexpert/DEVELOPMENT/$object.o" \
+                "$ROOT/build/xnu/ios-obj/DEVELOPMENT_ARM64_BCM2837/osfmk/DEVELOPMENT/$object.o"
+        done
+        rm -f "$ROOT/build/xnu/ios-obj/DEVELOPMENT_ARM64_BCM2837/bsd/DEVELOPMENT/bsd_init.o"
+        printf '%s\n' "$QCOM_USB_DEBUG" > "$QCOM_USB_STAMP"
+      fi
+      for object in pe_kprintf.o printf.o debug.o serial_console.o serial_general.o; do
+        EXTRA_MAKE_ARGS+=("${object}_CFLAGS_ADD=-DXNU_QCOM_USB_DEBUG=1 $QCOM_USB_INCLUDE")
+      done
+    else
+      echo "XNU_QCOM_USB_DEBUG=1 but $QCOM_USB_ARCHIVE is missing; build the component first" >&2
+      exit 1
+    fi
+  fi
   KERNEL_EXTRA_ARCHIVES="$KERNEL_EXTRA_ARCHIVES ${XNU_EXTRA_LD_ARCHIVES:-}"
   EXTRA_MAKE_ARGS+=("LD_KERNEL_ARCHIVES=$KERNEL_EXTRA_ARCHIVES")
   EXTRA_MAKE_ARGS+=("XNU_EXTERNAL_KERNEL_ARCHIVES=$KERNEL_ARCHIVE_DEPENDENCIES")
@@ -810,7 +855,7 @@ identity = '|'.join(mode + ':' + state(mode, archive) for mode, archive in zip(s
 if not stamp.exists() or stamp.read_text() != identity:
     # Make does not track selection of an older alternative external archive.
     # Rebuild the conditional personality and relink when this input changes.
-    for relative in ('mach.development.bcm2837.unstripped',
+    for relative in ('mach.development.bcm2837.unstripped.noctf',
                      'iokit/DEVELOPMENT/KernelConfigTables.cpo'):
         (directory / relative).unlink(missing_ok=True)
     directory.mkdir(parents=True, exist_ok=True)
@@ -829,5 +874,5 @@ make -C .cache/xnu-work "${XNU_BUILD_TARGET:-build}" SDKROOT="${XNU_SDKROOT:-iph
   OBJROOT="$ROOT/build/xnu/ios-obj" SYMROOT="$ROOT/build/xnu/ios-sym" DSTROOT="$ROOT/build/xnu/ios-dst"
 if [ "${XNU_SOURCE_CORECRYPTO14:-0}" = 1 ] && [ "$CRYPTO_BOOTSTRAP_MODE" = source ]; then
   python3 scripts/seal-source-crypto-kernel.py \
-    build/xnu/ios-obj/DEVELOPMENT_ARM64_BCM2837/mach.development.bcm2837.unstripped
+    build/xnu/ios-obj/DEVELOPMENT_ARM64_BCM2837/mach.development.bcm2837.unstripped.noctf
 fi
