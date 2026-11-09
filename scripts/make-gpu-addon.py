@@ -96,6 +96,13 @@ def main():
         # (patches/xnu/native-init-trampoline.patch); a tree that does not build it packs no entry.
         if (PLUGIN / 'lsfixd').is_file():
             files.append(('bin/lsfixd', 0o755, (PLUGIN / 'lsfixd').read_bytes()))
+        # The pkd shim, mounted over /usr/libexec by the init trampoline.
+        if (PLUGIN / 'pkd').is_file():
+            files.append(('usrlibexec/pkd', 0o755, (PLUGIN / 'pkd').read_bytes()))
+        # The signed launchd cache with the owner job merged in, mounted over /System/Library/xpc.
+        for name in ('launchd.plist', 'launchd.plist.sig'):
+            if (PLUGIN / 'xpc' / name).is_file():
+                files.append(('xpc/' + name, 0o644, (PLUGIN / 'xpc' / name).read_bytes()))
     for plist in sorted(PLUGIN.glob('*.plist')) if not no_daemon else []:
         if not plist.name.endswith('-entitlements.plist'):   # build input, not a launchd job
             files.append(('daemons/' + plist.name, 0o644, plist.read_bytes()))
