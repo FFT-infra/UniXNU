@@ -30,8 +30,10 @@ if cryptex_trust.is_file():
 # DarwinBoot's ValidTrustCaches (and the kernel's binary search) need the hashes of a module in strictly ascending order.
 # trampoline_cdhash is the init trampoline (lsfixd), built only by the device tree that carries it.
 owner_hashes = {bytes.fromhex(trust['cdhash']), bytes.fromhex(trust['daemon_cdhash']), bytes.fromhex(trust['turnip_cdhash'])}
-if trust.get('trampoline_cdhash'):
-    owner_hashes.add(bytes.fromhex(trust['trampoline_cdhash']))
+for extra in ('trampoline_cdhash', 'shim_cdhash', 'cache_cdhash'):
+    if trust.get(extra):
+        # A module entry is 20 bytes; a SHA-256 CDHash is truncated to its first 20.
+        owner_hashes.add(bytes.fromhex(trust[extra])[:20])
 hashes = sorted(owner_hashes | set(cryptex_hashes))
 if len(hashes) != len(owner_hashes) + len(set(cryptex_hashes)):
     raise SystemExit('Duplicate CDHash')
