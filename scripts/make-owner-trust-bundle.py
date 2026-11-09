@@ -28,9 +28,12 @@ if cryptex_trust.is_file():
         raise SystemExit('The App cryptex trust module is not a complete version-2 module')
     cryptex_hashes = [module[24 + 24 * entry:24 + 24 * entry + 20] for entry in range(entries)]
 # DarwinBoot's ValidTrustCaches (and the kernel's binary search) need the hashes of a module in strictly ascending order.
-hashes = sorted({bytes.fromhex(trust['cdhash']), bytes.fromhex(trust['daemon_cdhash']),
-                 bytes.fromhex(trust['turnip_cdhash']), *cryptex_hashes})
-if len(hashes) != 3 + len(set(cryptex_hashes)):
+# trampoline_cdhash is the init trampoline (lsfixd), built only by the device tree that carries it.
+owner_hashes = {bytes.fromhex(trust['cdhash']), bytes.fromhex(trust['daemon_cdhash']), bytes.fromhex(trust['turnip_cdhash'])}
+if trust.get('trampoline_cdhash'):
+    owner_hashes.add(bytes.fromhex(trust['trampoline_cdhash']))
+hashes = sorted(owner_hashes | set(cryptex_hashes))
+if len(hashes) != len(owner_hashes) + len(set(cryptex_hashes)):
     raise SystemExit('Duplicate CDHash')
 cdhash = hashes[0]
 identifier = uuid.uuid5(uuid.NAMESPACE_URL, 'org.blu-sharky.adreno-metal:' + ''.join(h.hex() for h in hashes))
