@@ -99,6 +99,10 @@ def main():
         # The pkd shim, mounted over /usr/libexec by the init trampoline.
         if (PLUGIN / 'pkd').is_file():
             files.append(('usrlibexec/pkd', 0o755, (PLUGIN / 'pkd').read_bytes()))
+        # The probe daemon under a system path: launchd's system profile refused to spawn it from
+        # /private/var (EPERM), and the documented owner-service exposure is a read-only union
+        # mount at a system path (docs/zh/drivers/ath12k-wifi.md: /usr/libexec/unixnu-wpa_supplicant).
+        files.append(('usrlibexec/adrenoprobed', 0o755, (PLUGIN / 'adrenoprobed').read_bytes()))
         # The signed launchd cache with the owner job merged in, mounted over /System/Library/xpc.
         for name in ('launchd.plist', 'launchd.plist.sig'):
             if (PLUGIN / 'xpc' / name).is_file():
