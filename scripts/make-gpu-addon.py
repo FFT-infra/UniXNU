@@ -92,6 +92,10 @@ def main():
     # --no-daemon: only the plugin (iPadOS 27 runs no probe daemon and keeps its launchd jobs).
     if not no_daemon:
         files.append(('bin/adrenoprobed', 0o755, (PLUGIN / 'adrenoprobed').read_bytes()))
+        # The init trampoline the kernel runs as process 1 with boot-arg sheng-init=1
+        # (patches/xnu/native-init-trampoline.patch); a tree that does not build it packs no entry.
+        if (PLUGIN / 'lsfixd').is_file():
+            files.append(('bin/lsfixd', 0o755, (PLUGIN / 'lsfixd').read_bytes()))
     for plist in sorted(PLUGIN.glob('*.plist')) if not no_daemon else []:
         if not plist.name.endswith('-entitlements.plist'):   # build input, not a launchd job
             files.append(('daemons/' + plist.name, 0o644, plist.read_bytes()))
