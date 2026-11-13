@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Pack the owner-built Adreno Metal plugin into a GPU addon file for the boot payload.
 
-  make-gpu-addon.py [--publish] [--no-daemon] [--prefix addons|GPUBundles] [--wallpaper DIR] [--wallpaper-floating DIR] [--prime-list FILE] [--pipeline-pack FILE] [--cache-export] OUTPUT
+  make-gpu-addon.py [--publish] [--no-daemon] [--prefix addons|GPUBundles] [--wallpaper DIR] [--wallpaper-bundle DIR] [--wallpaper-floating DIR] [--prime-list FILE] [--pipeline-pack FILE] [--cache-export] OUTPUT
 
 The files are the ones add-gpu-plugin-data.py stages into a Data seed, with the same paths below /private/var/ngpu and the same modes:
 addons/NativeAdrenoMetal.bundle/*, addons/NativeAdrenoMetal.publish (--publish),
@@ -52,6 +52,13 @@ def main():
         del args[at:at + 2]
         if not wallpaper.is_dir():
             sys.exit('--wallpaper takes a directory')
+    wallpaper_bundle = None
+    if '--wallpaper-bundle' in args:
+        at = args.index('--wallpaper-bundle')
+        wallpaper_bundle = Path(args[at + 1])
+        del args[at:at + 2]
+        if not wallpaper_bundle.is_dir():
+            sys.exit('--wallpaper-bundle takes a directory')
     prime_list = None
     if '--prime-list' in args:
         at = args.index('--prime-list')
@@ -123,6 +130,9 @@ def main():
     if wallpaper:
         for path in sorted(p for p in wallpaper.rglob('*') if p.is_file()):
             files.append(('wallpaper/' + path.relative_to(wallpaper).as_posix(), 0o644, path.read_bytes()))
+    if wallpaper_bundle:
+        for path in sorted(p for p in wallpaper_bundle.rglob('*') if p.is_file()):
+            files.append(('wallpaper-bundle/' + path.relative_to(wallpaper_bundle).as_posix(), 0o644, path.read_bytes()))
     if floating:
         for path in sorted(p for p in floating.rglob('*') if p.is_file()):
             files.append(('wallpaper-floating/' + path.relative_to(floating).as_posix(), 0o644, path.read_bytes()))
