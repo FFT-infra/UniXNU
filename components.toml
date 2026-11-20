@@ -607,7 +607,7 @@ dependencies = []
 source_files = ["kernel/QcomXnuUsbDebug.c", "kernel/QcomUsbScreenshot.c", "usb/Dwc3.c", "soc/QcomUsbQualify.c", "soc/QcomUsbDmaDomain.c"]
 runtime_identifiers = ["QcomXnuUsbDebug", "qcom_usb_debug_init", "qcom-usb-debug", "QCOM USB WORKER"]
 build_stage = "kernel"
-build = ["{component}/scripts/build.py",
+build = ["build-qcom-usb-debug.py",
   "--compile-record", "{tree}/build/xnu/ios-obj/DEVELOPMENT_ARM64_BCM2837/pexpert/DEVELOPMENT/pe_kprintf.o.json",
   "--soc", "soc/Sm8250.h",
   "--output", "{tree}/.cache/qcom-usb-debug", "--replace"]
